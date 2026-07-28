@@ -1,0 +1,39 @@
+{
+  "name": "landa",
+  "version": "0.0.1",
+  "description": "Computers for agents — control plane + swappable seat backends",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "landa": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "demo": "tsx src/cli.ts demo"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "agents",
+    "sandbox",
+    "mcp",
+    "computer-use",
+    "control-plane"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
