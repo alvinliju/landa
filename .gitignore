@@ -7,3 +7,5 @@ dist/
 .DS_Store
 .turbo
 coverage/
+firecracker/assets/
+firecracker/vmconfig.generated.json
