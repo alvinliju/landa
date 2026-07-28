@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # local postgres for landa — same DATABASE_URL shape as deploy
+# if root: run server as unprivileged user `landa` (initdb forbids root)
 set -euo pipefail
 
 : "${LANDA_DATA:=$(pwd)/.data}"
@@ -14,58 +15,122 @@ export PGDATA PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 
 mkdir -p "$LANDA_DATA"
 
+# when root, postgres data dir owned by landa (or current non-root)
+run_as_pg() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    if ! id -u landa >/dev/null 2>&1; then
+      useradd --system --home-dir "$LANDA_DATA" --shell /usr/sbin/nologin landa 2>/dev/null \
+        || useradd --system --home-dir "$LANDA_DATA" --shell /bin/false landa 2>/dev/null \
+        || true
+    fi
+    chown -R landa:landa "$LANDA_DATA" 2>/dev/null || chown -R landa "$LANDA_DATA"
+    runuser -u landa -- env PGDATA="$PGDATA" PGHOST="$PGHOST" PGPORT="$PGPORT" \
+      PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" PGDATABASE="$PGDATABASE" \
+      PATH="$PATH" "$@"
+  else
+    "$@"
+  fi
+}
+
+# prefer runuser; fall back to su
+if [[ "$(id -u)" -eq 0 ]] && ! command -v runuser >/dev/null 2>&1; then
+  run_as_pg() {
+    if ! id -u landa >/dev/null 2>&1; then
+      useradd --system --home-dir "$LANDA_DATA" --shell /bin/bash landa || true
+    fi
+    chown -R landa:landa "$LANDA_DATA" 2>/dev/null || chown -R landa "$LANDA_DATA"
+    su -s /bin/bash landa -c "export PGDATA='$PGDATA' PGHOST='$PGHOST' PGPORT='$PGPORT' PGUSER='$PGUSER' PGPASSWORD='$PGPASSWORD' PGDATABASE='$PGDATABASE' PATH='$PATH'; $*"
+  }
+fi
+
 cmd="${1:-status}"
 
 case "$cmd" in
   start)
     if [[ ! -f "$PGDATA/PG_VERSION" ]]; then
       echo "initdb $PGDATA"
-      initdb -D "$PGDATA" --auth=trust --username="$PGUSER"
-      cat >>"$PGDATA/postgresql.conf" <<EOF
+      if [[ "$(id -u)" -eq 0 ]]; then
+        if ! id -u landa >/dev/null 2>&1; then
+          useradd --system --create-home --home-dir /var/lib/landa-home --shell /bin/bash landa 2>/dev/null \
+            || useradd -r -m -d /var/lib/landa-home landa || true
+        fi
+        mkdir -p "$PGDATA" "$LANDA_DATA"
+        chown -R landa:landa "$LANDA_DATA" 2>/dev/null || chown -R landa "$LANDA_DATA"
+        su -s /bin/bash landa -c "initdb -D '$PGDATA' --auth=trust --username='$PGUSER'"
+        cat >>"$PGDATA/postgresql.conf" <<EOF
 port = $PGPORT
 listen_addresses = '127.0.0.1'
 unix_socket_directories = '$LANDA_DATA'
 EOF
-      cat >"$PGDATA/pg_hba.conf" <<EOF
+        cat >"$PGDATA/pg_hba.conf" <<EOF
 local all all trust
 host all all 127.0.0.1/32 trust
 host all all ::1/128 trust
 EOF
+        chown -R landa:landa "$LANDA_DATA" 2>/dev/null || chown -R landa "$LANDA_DATA"
+      else
+        initdb -D "$PGDATA" --auth=trust --username="$PGUSER"
+        cat >>"$PGDATA/postgresql.conf" <<EOF
+port = $PGPORT
+listen_addresses = '127.0.0.1'
+unix_socket_directories = '$LANDA_DATA'
+EOF
+        cat >"$PGDATA/pg_hba.conf" <<EOF
+local all all trust
+host all all 127.0.0.1/32 trust
+host all all ::1/128 trust
+EOF
+      fi
     fi
-    if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
-      echo "postgres already running on $PGHOST:$PGPORT"
+    if [[ "$(id -u)" -eq 0 ]]; then
+      if su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' status" >/dev/null 2>&1; then
+        echo "postgres already running on $PGHOST:$PGPORT"
+      else
+        su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' -l '$LANDA_DATA/pg.log' -o '-k $LANDA_DATA' start"
+        echo "postgres started → $PGHOST:$PGPORT (log: $LANDA_DATA/pg.log)"
+      fi
     else
-      pg_ctl -D "$PGDATA" -l "$LANDA_DATA/pg.log" -o "-k $LANDA_DATA" start
-      echo "postgres started → $PGHOST:$PGPORT (log: $LANDA_DATA/pg.log)"
+      if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
+        echo "postgres already running on $PGHOST:$PGPORT"
+      else
+        pg_ctl -D "$PGDATA" -l "$LANDA_DATA/pg.log" -o "-k $LANDA_DATA" start
+        echo "postgres started → $PGHOST:$PGPORT (log: $LANDA_DATA/pg.log)"
+      fi
     fi
-    # wait ready
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 40); do
       if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1; then
         break
       fi
-      sleep 0.2
+      sleep 0.25
     done
-    # create db if missing
     if ! psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$PGDATABASE'" | grep -q 1; then
       createdb -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" "$PGDATABASE"
       echo "created database $PGDATABASE"
     fi
-    # pgcrypto / gen_random_uuid
     psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto;'
     echo "DATABASE_URL=postgres://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE"
     ;;
   stop)
-    if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
-      pg_ctl -D "$PGDATA" stop -m fast
-      echo "postgres stopped"
+    if [[ "$(id -u)" -eq 0 ]]; then
+      su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' status" >/dev/null 2>&1 \
+        && su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' stop -m fast" \
+        && echo "postgres stopped" || echo "postgres not running"
     else
-      echo "postgres not running"
+      if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
+        pg_ctl -D "$PGDATA" stop -m fast
+        echo "postgres stopped"
+      else
+        echo "postgres not running"
+      fi
     fi
     ;;
   status)
-    if pg_ctl -D "$PGDATA" status; then
-      pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" || true
+    if [[ "$(id -u)" -eq 0 ]]; then
+      su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' status" || true
+    else
+      pg_ctl -D "$PGDATA" status || true
     fi
+    pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" || true
     ;;
   reset)
     "$0" stop || true
