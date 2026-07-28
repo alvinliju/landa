@@ -38,3 +38,16 @@ WHERE
   NOT EXISTS (
     SELECT 1 FROM templates WHERE slug = 'firecracker-hello' AND project_id IS NULL
   );
+
+INSERT INTO templates (id, project_id, slug, name, backend, config)
+SELECT
+  '00000000-0000-4000-8000-000000000012'::uuid,
+  NULL,
+  'docker-alpine',
+  'Docker Alpine seat',
+  'docker',
+  '{"image": "alpine:3.20", "note": "real shell/fs via docker"}'::jsonb
+WHERE
+  NOT EXISTS (
+    SELECT 1 FROM templates WHERE slug = 'docker-alpine' AND project_id IS NULL
+  );

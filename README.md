@@ -12,7 +12,7 @@ agent / MCP / CLI
        │
    ComputerBackend
     ├── memory    offline fake (works now)
-    ├── docker    real shell/fs (next)
+    ├── docker    real shell/fs (works when daemon up)
     ├── microvm   strong isolation (Firecracker / cloud-hypervisor)
     └── cloudvm   our VMs on rented metal (later)
 ```
@@ -20,15 +20,18 @@ agent / MCP / CLI
 Unit of work: **Computer**  
 `create → exec / fs → world snapshot (JSON) → destroy`
 
+Contract details: **[docs/contract.md](./docs/contract.md)**
+
 ## quick start
 
 ```bash
 cd ~/Documents/landa
 npm install
-npm run demo          # memory seat, no db
+npm run demo              # memory seat — full contract walk
+# npm run demo:docker     # real container (Docker Desktop running)
 
 # control plane (Hono + Postgres) — same shape as deploy
-nix develop           # or: export DATABASE_URL=… if pg already local
+nix develop               # or: export DATABASE_URL=… if pg already local
 landa-pg start
 npm install
 landa-migrate && landa-migrate seed   # prints API key once
@@ -70,7 +73,8 @@ docs/backends.md
 ## roadmap
 
 - [x] seat contract + memory + demo
-- [ ] **docker backend** (first real computer)
+- [x] docker backend (first real computer — needs daemon)
+- [x] multi-backend ControlPlane + registry
 - [ ] agent base image
 - [ ] MCP: `computer_create` / `computer_exec` / `computer_snapshot`
 - [ ] microVM backend

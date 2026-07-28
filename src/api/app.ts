@@ -2,21 +2,28 @@ import { Hono } from "hono";
 import type { AppEnv } from "../auth.js";
 import { requireAuth } from "../auth.js";
 import { sql } from "../db.js";
-import { ControlPlane } from "../control-plane.js";
-import { MemoryBackend } from "../backends/memory.js";
+import { ControlPlane, landaErrorToHttp } from "../control-plane.js";
+import { createMemoryPlane } from "../plane.js";
+import type { BackendName } from "../types.js";
 
 /**
  * control plane HTTP — E2B-shaped surfaces, our seats
  * auth: Authorization: Bearer landa_…  or  X-Api-Key: landa_…
+ *
+ * Pass a ControlPlane so docker/memory registration is shared with CLI.
  */
-export function createApp() {
+export function createApp(plane: ControlPlane = createMemoryPlane()) {
   const app = new Hono<AppEnv>();
-  const memory = new ControlPlane(new MemoryBackend());
 
   app.get("/health", async (c) => {
     try {
       await sql()`SELECT 1`;
-      return c.json({ ok: true, service: "landa-api", db: true });
+      return c.json({
+        ok: true,
+        service: "landa-api",
+        db: true,
+        backends: plane.backends(),
+      });
     } catch (e) {
       return c.json(
         { ok: false, service: "landa-api", db: false, error: String(e) },
@@ -34,7 +41,12 @@ export function createApp() {
         maxConcurrent: auth.maxConcurrent,
         maxSessionSec: auth.maxSessionSec,
       },
+      backends: plane.backends(),
     });
+  });
+
+  app.get("/v1/backends", requireAuth, async (c) => {
+    return c.json({ backends: plane.backends() });
   });
 
   app.get("/v1/templates", requireAuth, async (c) => {
@@ -86,7 +98,7 @@ export function createApp() {
     const templates = await db<{
       id: string;
       backend: string;
-      config: unknown;
+      config: { image?: string; note?: string };
     }[]>`
       SELECT id, backend, config FROM templates
       WHERE slug = ${templateSlug}
@@ -99,28 +111,48 @@ export function createApp() {
     }
 
     const expires = new Date(Date.now() + auth.maxSessionSec * 1000);
-
-    let guestIp: string | null = null;
     let hostMeta: Record<string, unknown> = {};
     let status = "running";
     let err: string | null = null;
+    const backendName = tmpl.backend as BackendName;
 
-    if (tmpl.backend === "memory") {
+    // seat backends we can actually spawn
+    if (backendName === "memory" || backendName === "docker") {
+      if (!plane.backends().includes(backendName)) {
+        return c.json(
+          {
+            error: "backend_unavailable",
+            backend: backendName,
+            available: plane.backends(),
+          },
+          501,
+        );
+      }
       try {
-        const info = await memory.create({
+        const cfg =
+          tmpl.config && typeof tmpl.config === "object" ? tmpl.config : {};
+        const info = await plane.create({
           name: label || templateSlug,
           template: templateSlug,
+          backend: backendName,
+          image: cfg.image,
         });
-        hostMeta = { computerId: info.id, endpoints: info.endpoints };
-        status = "running";
+        hostMeta = {
+          computerId: info.id,
+          endpoints: info.endpoints,
+          seatStatus: info.status,
+        };
+        status = info.status;
+        err = info.error ?? null;
       } catch (e) {
         status = "error";
         err = String(e);
+        hostMeta = { error: String(e) };
       }
     } else {
       status = "creating";
       hostMeta = {
-        note: "firecracker spawn not wired — seat row only",
+        note: `${backendName} spawn not wired — seat row only`,
         config: tmpl.config,
       };
     }
@@ -136,7 +168,7 @@ export function createApp() {
         ${label},
         ${status},
         ${tmpl.backend},
-        ${guestIp},
+        ${null},
         ${db.json(JSON.parse(JSON.stringify(hostMeta)))},
         ${err},
         ${status === "running" ? db`now()` : null},
@@ -190,8 +222,8 @@ export function createApp() {
     const row = rows[0];
     if (!row) return c.json({ error: "not found" }, 404);
 
-    if (row.backend === "memory" && row.metadata?.computerId) {
-      await memory.destroy(row.metadata.computerId).catch(() => undefined);
+    if (row.metadata?.computerId) {
+      await plane.destroy(row.metadata.computerId).catch(() => undefined);
     }
 
     const updated = await db`
@@ -217,7 +249,7 @@ export function createApp() {
   app.post("/v1/sandboxes/:id/exec", requireAuth, async (c) => {
     const auth = c.get("auth");
     const id = c.req.param("id") as string;
-    const body = (await c.req.json()) as { cmd?: string };
+    const body = (await c.req.json()) as { cmd?: string; cwd?: string };
     if (!body.cmd) return c.json({ error: "cmd required" }, 400);
     const db = sql();
 
@@ -236,29 +268,126 @@ export function createApp() {
     if (row.status !== "running") {
       return c.json({ error: "sandbox not running", status: row.status }, 409);
     }
-    if (row.backend !== "memory" || !row.metadata?.computerId) {
+    if (!row.metadata?.computerId) {
       return c.json(
-        { error: "exec only on memory backend for now", backend: row.backend },
+        { error: "no live seat for sandbox", backend: row.backend },
         501,
       );
     }
 
-    const result = await memory.exec(row.metadata.computerId, {
-      cmd: body.cmd,
-    });
+    try {
+      const result = await plane.exec(row.metadata.computerId, {
+        cmd: body.cmd,
+        cwd: body.cwd,
+      });
 
-    await db`
-      INSERT INTO audit_events (project_id, sandbox_id, action, detail)
-      VALUES (
-        ${auth.projectId}::uuid,
-        ${id}::uuid,
-        'sandbox.exec',
-        ${db.json({ cmd: body.cmd, exitCode: result.exitCode })}
-      )
-    `;
+      await db`
+        INSERT INTO audit_events (project_id, sandbox_id, action, detail)
+        VALUES (
+          ${auth.projectId}::uuid,
+          ${id}::uuid,
+          'sandbox.exec',
+          ${db.json({ cmd: body.cmd, exitCode: result.exitCode })}
+        )
+      `;
 
-    return c.json({ result });
+      return c.json({ result });
+    } catch (e) {
+      const { status, body: errBody } = landaErrorToHttp(e);
+      return c.json(errBody, status as 400);
+    }
   });
+
+  app.post("/v1/sandboxes/:id/snapshot", requireAuth, async (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id") as string;
+    const db = sql();
+    const rows = await db<{
+      status: string;
+      metadata: { computerId?: string };
+    }[]>`
+      SELECT status, metadata FROM sandboxes
+      WHERE id = ${id}::uuid AND project_id = ${auth.projectId}::uuid
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return c.json({ error: "not found" }, 404);
+    if (row.status !== "running" || !row.metadata?.computerId) {
+      return c.json({ error: "no live seat" }, 409);
+    }
+    try {
+      const snapshot = await plane.worldSnapshot(row.metadata.computerId);
+      return c.json({ snapshot });
+    } catch (e) {
+      const { status, body: errBody } = landaErrorToHttp(e);
+      return c.json(errBody, status as 400);
+    }
+  });
+
+  app.post("/v1/sandboxes/:id/files", requireAuth, async (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id") as string;
+    const body = (await c.req.json()) as { path?: string; content?: string };
+    if (!body.path || body.content === undefined) {
+      return c.json({ error: "path and content required" }, 400);
+    }
+    const computerId = await liveComputerId(auth.projectId, id);
+    if (!computerId.ok) return c.json(computerId.body, computerId.status as 400);
+    try {
+      await plane.writeFile(computerId.id, {
+        path: body.path,
+        content: body.content,
+      });
+      return c.json({ ok: true, path: body.path });
+    } catch (e) {
+      const { status, body: errBody } = landaErrorToHttp(e);
+      return c.json(errBody, status as 400);
+    }
+  });
+
+  app.get("/v1/sandboxes/:id/files", requireAuth, async (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id") as string;
+    const path = c.req.query("path") ?? ".";
+    const mode = c.req.query("mode") ?? "list"; // list | read
+    const computerId = await liveComputerId(auth.projectId, id);
+    if (!computerId.ok) return c.json(computerId.body, computerId.status as 400);
+    try {
+      if (mode === "read") {
+        const file = await plane.readFile(computerId.id, path);
+        return c.json({ file });
+      }
+      const entries = await plane.listFiles(computerId.id, path);
+      return c.json({ entries });
+    } catch (e) {
+      const { status, body: errBody } = landaErrorToHttp(e);
+      return c.json(errBody, status as 400);
+    }
+  });
+
+  async function liveComputerId(
+    projectId: string,
+    sandboxId: string,
+  ): Promise<
+    | { ok: true; id: string }
+    | { ok: false; status: number; body: Record<string, unknown> }
+  > {
+    const db = sql();
+    const rows = await db<{
+      status: string;
+      metadata: { computerId?: string };
+    }[]>`
+      SELECT status, metadata FROM sandboxes
+      WHERE id = ${sandboxId}::uuid AND project_id = ${projectId}::uuid
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return { ok: false, status: 404, body: { error: "not found" } };
+    if (row.status !== "running" || !row.metadata?.computerId) {
+      return { ok: false, status: 409, body: { error: "no live seat" } };
+    }
+    return { ok: true, id: row.metadata.computerId };
+  }
 
   return app;
 }

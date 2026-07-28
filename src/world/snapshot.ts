@@ -9,9 +9,11 @@ export async function snapshotShell(
   id: ComputerId,
 ): Promise<WorldSnapshot> {
   const cwd = await backend.exec(id, { cmd: "pwd", timeoutMs: 5_000 });
-  const who = await backend.exec(id, { cmd: "whoami; uname -a", timeoutMs: 5_000 });
+  // keep commands simple so memory + docker both work without a full shell
+  const who = await backend.exec(id, { cmd: "whoami", timeoutMs: 5_000 });
+  const uname = await backend.exec(id, { cmd: "uname -a", timeoutMs: 5_000 });
   const ls = await backend.exec(id, {
-    cmd: "ls -la 2>/dev/null | head -30",
+    cmd: "ls -la",
     timeoutMs: 5_000,
   });
 
@@ -28,7 +30,8 @@ export async function snapshotShell(
     surface: "shell",
     summary: [
       `cwd=${cwdPath}`,
-      ...who.stdout.trim().split("\n").filter(Boolean).slice(0, 2),
+      ...who.stdout.trim().split("\n").filter(Boolean).slice(0, 1),
+      ...uname.stdout.trim().split("\n").filter(Boolean).slice(0, 1),
       `entries=${lines.length}`,
     ],
     affordances: [

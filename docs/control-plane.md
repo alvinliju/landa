@@ -27,9 +27,15 @@ SDK / curl / later MCP
 | POST | `/v1/sandboxes` | key | create (`template`, `label`) |
 | GET | `/v1/sandboxes/:id` | key | get |
 | DELETE | `/v1/sandboxes/:id` | key | destroy |
-| POST | `/v1/sandboxes/:id/exec` | key | `{ "cmd": "…" }` memory only |
+| POST | `/v1/sandboxes/:id/exec` | key | `{ "cmd": "…" }` memory + docker |
+| POST | `/v1/sandboxes/:id/snapshot` | key | world JSON (affordances) |
+| POST | `/v1/sandboxes/:id/files` | key | write `{ path, content }` |
+| GET | `/v1/sandboxes/:id/files?path=&mode=list\|read` | key | list or read |
+| GET | `/v1/backends` | key | registered seat drivers |
 
 Auth: `Authorization: Bearer <key>` or `X-Api-Key: <key>`.
+
+Templates: `memory-default`, `docker-alpine`, `firecracker-hello` (row-only until wired).
 
 ## maps to E2B UI
 

@@ -17,6 +17,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "demo": "tsx src/cli.ts demo",
+    "demo:docker": "tsx src/cli.ts demo docker",
     "api": "tsx src/api/server.ts",
     "api:dev": "tsx watch src/api/server.ts",
     "migrate": "tsx scripts/migrate.ts up",
