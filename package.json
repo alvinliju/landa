@@ -22,7 +22,9 @@
     "api:dev": "tsx watch src/api/server.ts",
     "migrate": "tsx scripts/migrate.ts up",
     "migrate:seed": "tsx scripts/migrate.ts seed",
-    "dev": "bash scripts/landa-dev"
+    "dev": "bash scripts/landa-dev",
+    "web": "npm run dev --prefix web",
+    "web:build": "npm run build --prefix web"
   },
   "engines": {
     "node": ">=20"

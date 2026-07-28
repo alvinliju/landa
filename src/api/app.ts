@@ -15,6 +15,35 @@ import type { BackendName } from "../types.js";
 export function createApp(plane: ControlPlane = createMemoryPlane()) {
   const app = new Hono<AppEnv>();
 
+  // browser console — landa.tharavad.xyz + local vite
+  app.use("*", async (c, next) => {
+    const origin = c.req.header("Origin");
+    const open = process.env.LANDA_CORS_ORIGIN === "*";
+    const allowed =
+      open ||
+      !origin ||
+      origin === "http://localhost:5173" ||
+      origin === "http://127.0.0.1:5173" ||
+      origin === "http://landa.tharavad.xyz" ||
+      origin === "https://landa.tharavad.xyz" ||
+      origin.endsWith(".tharavad.xyz");
+    // reflect origin when allowed (required if browser sends credentials later)
+    c.header("Access-Control-Allow-Origin", allowed ? (origin ?? "*") : "null");
+    c.header(
+      "Access-Control-Allow-Headers",
+      "Authorization, Content-Type, X-Api-Key",
+    );
+    c.header(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    );
+    c.header("Access-Control-Max-Age", "86400");
+    if (c.req.method === "OPTIONS") {
+      return c.body(null, 204);
+    }
+    await next();
+  });
+
   app.get("/health", async (c) => {
     try {
       await sql()`SELECT 1`;

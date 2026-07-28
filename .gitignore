@@ -1,5 +1,9 @@
 node_modules/
+web/node_modules/
 dist/
+# ship built console for edge (API tsc dist/ still ignored)
+!web/dist/
+!web/dist/**
 .env
 .env.*
 !.env.example
