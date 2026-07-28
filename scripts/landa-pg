@@ -50,13 +50,17 @@ case "$cmd" in
     if [[ ! -f "$PGDATA/PG_VERSION" ]]; then
       echo "initdb $PGDATA"
       if [[ "$(id -u)" -eq 0 ]]; then
+        # NixOS has no /bin/bash — use shell from PATH
+        SHELL_BIN="$(command -v bash || command -v sh)"
         if ! id -u landa >/dev/null 2>&1; then
-          useradd --system --create-home --home-dir /var/lib/landa-home --shell /bin/bash landa 2>/dev/null \
-            || useradd -r -m -d /var/lib/landa-home landa || true
+          useradd --system --create-home --home-dir /var/lib/landa-home --shell "$SHELL_BIN" landa 2>/dev/null \
+            || useradd -r -m -d /var/lib/landa-home -s "$SHELL_BIN" landa || true
+        else
+          usermod -s "$SHELL_BIN" landa 2>/dev/null || true
         fi
         mkdir -p "$PGDATA" "$LANDA_DATA"
         chown -R landa:landa "$LANDA_DATA" 2>/dev/null || chown -R landa "$LANDA_DATA"
-        su -s /bin/bash landa -c "initdb -D '$PGDATA' --auth=trust --username='$PGUSER'"
+        su -s "$SHELL_BIN" landa -c "initdb -D '$PGDATA' --auth=trust --username='$PGUSER'"
         cat >>"$PGDATA/postgresql.conf" <<EOF
 port = $PGPORT
 listen_addresses = '127.0.0.1'
@@ -83,10 +87,11 @@ EOF
       fi
     fi
     if [[ "$(id -u)" -eq 0 ]]; then
-      if su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' status" >/dev/null 2>&1; then
+      SHELL_BIN="$(command -v bash || command -v sh)"
+      if su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' status" >/dev/null 2>&1; then
         echo "postgres already running on $PGHOST:$PGPORT"
       else
-        su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' -l '$LANDA_DATA/pg.log' -o '-k $LANDA_DATA' start"
+        su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' -l '$LANDA_DATA/pg.log' -o '-k $LANDA_DATA' start"
         echo "postgres started → $PGHOST:$PGPORT (log: $LANDA_DATA/pg.log)"
       fi
     else
@@ -112,8 +117,9 @@ EOF
     ;;
   stop)
     if [[ "$(id -u)" -eq 0 ]]; then
-      su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' status" >/dev/null 2>&1 \
-        && su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' stop -m fast" \
+      SHELL_BIN="$(command -v bash || command -v sh)"
+      su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' status" >/dev/null 2>&1 \
+        && su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' stop -m fast" \
         && echo "postgres stopped" || echo "postgres not running"
     else
       if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
@@ -126,7 +132,8 @@ EOF
     ;;
   status)
     if [[ "$(id -u)" -eq 0 ]]; then
-      su -s /bin/bash landa -c "pg_ctl -D '$PGDATA' status" || true
+      SHELL_BIN="$(command -v bash || command -v sh)"
+      su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' status" || true
     else
       pg_ctl -D "$PGDATA" status || true
     fi
