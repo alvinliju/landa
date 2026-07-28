@@ -59,17 +59,18 @@ nix --extra-experimental-features 'nix-command flakes' develop -c bash -c '
   export DATABASE_URL=postgres://landa:landa@127.0.0.1:5433/landa
   chmod +x scripts/*
   landa-pg start
-  npm install --omit=dev=false
+  npm install
   landa-migrate
   landa-migrate seed || true
 '
 
-# systemd unit (imperative — ok for edge until NixOS module exists)
-install -m 644 deploy/landa-api.service /etc/systemd/system/landa-api.service
+# NixOS: /etc is read-only — use /run/systemd/system (survives until reboot)
+# re-run landa-deploy after reboot, or add a NixOS module later
+install -d /run/systemd/system
+install -m 644 deploy/landa-api.service /run/systemd/system/landa-api.service
 systemctl daemon-reload
-systemctl enable landa-api.service
 systemctl restart landa-api.service
-sleep 2
+sleep 3
 systemctl --no-pager --full status landa-api.service || true
 
 # open port (NixOS firewall — best-effort)
