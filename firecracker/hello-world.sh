@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # landa firecracker hello — adapted from Julia Evans / firecracker-demo
 # run as root on Linux+KVM: sudo ./hello-world.sh
+#   or: sudo env PATH="/usr/local/bin:$PATH" ./hello-world.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -8,8 +9,21 @@ ASSETS="$ROOT/assets"
 mkdir -p "$ASSETS"
 cd "$ROOT"
 
+# sudo often drops /usr/local/bin — find firecracker explicitly
+export PATH="/usr/local/bin:/run/current-system/sw/bin:${PATH:-/usr/bin:/bin}"
+FIRECRACKER_BIN="${FIRECRACKER_BIN:-}"
+if [[ -z "$FIRECRACKER_BIN" ]]; then
+  if command -v firecracker >/dev/null 2>&1; then
+    FIRECRACKER_BIN="$(command -v firecracker)"
+  elif [[ -x /usr/local/bin/firecracker ]]; then
+    FIRECRACKER_BIN=/usr/local/bin/firecracker
+  elif [[ -x "$HOME/.local/bin/firecracker" ]]; then
+    FIRECRACKER_BIN="$HOME/.local/bin/firecracker"
+  fi
+fi
+
 if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "firecracker needs Linux+KVM (not $(uname -s)). run this on mothership / a KVM box." >&2
+  echo "firecracker needs Linux+KVM (not $(uname -s))." >&2
   exit 1
 fi
 
@@ -18,32 +32,46 @@ if [[ ! -r /dev/kvm ]]; then
   exit 1
 fi
 
-if ! command -v firecracker >/dev/null 2>&1; then
-  echo "firecracker not in PATH. grab a release:" >&2
+if [[ -z "${FIRECRACKER_BIN:-}" || ! -x "$FIRECRACKER_BIN" ]]; then
+  echo "firecracker binary not found." >&2
+  echo "  put it at /usr/local/bin/firecracker or set FIRECRACKER_BIN=..." >&2
   echo "  https://github.com/firecracker-microvm/firecracker/releases" >&2
   exit 1
 fi
 
-# --- assets (same demo bits Julia used) ------------------------------------
+echo "using firecracker: $FIRECRACKER_BIN ($("$FIRECRACKER_BIN" --version 2>&1 | head -1))"
+
+dl() {
+  local url="$1" out="$2"
+  if [[ -e "$out" ]]; then
+    return 0
+  fi
+  echo "download $(basename "$out")…"
+  curl -fsSL -o "$out" "$url"
+}
+
+# --- assets ----------------------------------------------------------------
 KERNEL="$ASSETS/hello-vmlinux.bin"
 ROOTFS="$ASSETS/hello-rootfs.ext4"
 SSH_KEY="$ASSETS/hello-id_rsa"
 
-if [[ ! -e "$KERNEL" ]]; then
-  echo "download kernel…"
-  wget -q -O "$KERNEL" \
-    https://s3.amazonaws.com/spec.ccfc.min/img/hello/kernel/hello-vmlinux.bin
-fi
+# official tiny kernel (works)
+dl "https://s3.amazonaws.com/spec.ccfc.min/img/hello/kernel/hello-vmlinux.bin" "$KERNEL"
+
+# old demo rootfs URL 404s often — prefer file already present, else CI squashfs path docs
 if [[ ! -e "$ROOTFS" ]]; then
-  echo "download rootfs…"
-  wget -q -O "$ROOTFS" \
-    https://github.com/firecracker-microvm/firecracker-demo/raw/fea3897ccfab0387ce5cd4fa2dd49d869729d612/xenial.rootfs.ext4
+  echo "missing $ROOTFS" >&2
+  echo "old xenial demo rootfs is gone (404). either:" >&2
+  echo "  1) copy a rootfs.ext4 here as assets/hello-rootfs.ext4" >&2
+  echo "  2) or run: ./fetch-ci-rootfs.sh  (builds ext4 from Firecracker CI squashfs)" >&2
+  exit 1
 fi
+
 if [[ ! -e "$SSH_KEY" ]]; then
-  echo "download ssh key…"
-  wget -q -O "$SSH_KEY" \
-    https://raw.githubusercontent.com/firecracker-microvm/firecracker-demo/ec271b1e5ffc55bd0bf0632d5260e96ed54b5c0c/xenial.rootfs.id_rsa
-  chmod 600 "$SSH_KEY"
+  dl "https://raw.githubusercontent.com/firecracker-microvm/firecracker-demo/ec271b1e5ffc55bd0bf0632d5260e96ed54b5c0c/xenial.rootfs.id_rsa" "$SSH_KEY" || true
+  if [[ -e "$SSH_KEY" ]]; then
+    chmod 600 "$SSH_KEY"
+  fi
 fi
 
 # --- link-local net (offline demo; no egress) ------------------------------
@@ -64,8 +92,6 @@ sysctl -w "net.ipv6.conf.${TAP_DEV}.disable_ipv6=1" >/dev/null
 ip addr add "${TAP_IP}${MASK_SHORT}" dev "$TAP_DEV"
 ip link set dev "$TAP_DEV" up
 
-# --- config file (firecracker --no-api) ------------------------------------
-# leaner than Julia's 1G/2vcpu — denser agent seats later
 CONFIG="$ROOT/vmconfig.generated.json"
 cat >"$CONFIG" <<EOF
 {
@@ -97,10 +123,10 @@ cat >"$CONFIG" <<EOF
 EOF
 
 echo "config → $CONFIG"
-echo "ssh:   ssh -o StrictHostKeyChecking=false -i $SSH_KEY root@${FC_IP}"
+if [[ -e "$SSH_KEY" ]]; then
+  echo "ssh:   ssh -o StrictHostKeyChecking=false -i $SSH_KEY root@${FC_IP}"
+fi
 echo "start firecracker (true cold path)…"
 echo
 
-# wall time for curiosity — not the official bench yet
-START_NS=$(date +%s%N)
-exec firecracker --no-api --config-file "$CONFIG"
+exec "$FIRECRACKER_BIN" --no-api --config-file "$CONFIG"
