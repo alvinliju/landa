@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# deploy landa control plane to a public host (default: edge VPS)
+#
+# usage:
+#   nix run .#deploy
+#   ./scripts/landa-deploy
+#   DEPLOY_HOST=root@1.2.3.4 ./scripts/landa-deploy
+#
+# opens http://<host>:8787  (API; auth via API key from seed)
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HOST="${DEPLOY_HOST:-root@178.105.120.5}"
+REMOTE_DIR="${DEPLOY_DIR:-/var/lib/landa}"
+REPO="${DEPLOY_REPO:-https://github.com/alvinliju/landa.git}"
+BRANCH="${DEPLOY_BRANCH:-main}"
+PORT="${LANDA_API_PORT:-8787}"
+
+echo "deploy → $HOST:$REMOTE_DIR ($REPO @$BRANCH)"
+
+ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$HOST" \
+  "REMOTE_DIR=$REMOTE_DIR REPO=$REPO BRANCH=$BRANCH PORT=$PORT bash -s" <<'REMOTE'
+set -euo pipefail
+export PATH="/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:$PATH"
+
+if ! command -v nix >/dev/null 2>&1; then
+  echo "nix required on deploy host" >&2
+  exit 1
+fi
+if ! command -v git >/dev/null 2>&1; then
+  echo "git required on deploy host" >&2
+  exit 1
+fi
+
+mkdir -p "$REMOTE_DIR"
+if [[ -d "$REMOTE_DIR/.git" ]]; then
+  cd "$REMOTE_DIR"
+  git fetch origin
+  git checkout "$BRANCH"
+  git reset --hard "origin/$BRANCH"
+else
+  git clone --branch "$BRANCH" "$REPO" "$REMOTE_DIR"
+  cd "$REMOTE_DIR"
+fi
+
+echo "HEAD $(git rev-parse --short HEAD)"
+
+# node + npm via nix develop for install/migrate
+nix --extra-experimental-features 'nix-command flakes' develop -c bash -c '
+  set -euo pipefail
+  export LANDA_ROOT="$PWD"
+  export LANDA_DATA="$PWD/.data"
+  export PGDATA="$LANDA_DATA/pg"
+  export PGHOST=127.0.0.1
+  export PGPORT=5433
+  export PGUSER=landa
+  export PGPASSWORD=landa
+  export PGDATABASE=landa
+  export DATABASE_URL=postgres://landa:landa@127.0.0.1:5433/landa
+  chmod +x scripts/*
+  landa-pg start
+  npm install --omit=dev=false
+  landa-migrate
+  landa-migrate seed || true
+'
+
+# systemd unit (imperative — ok for edge until NixOS module exists)
+install -m 644 deploy/landa-api.service /etc/systemd/system/landa-api.service
+systemctl daemon-reload
+systemctl enable landa-api.service
+systemctl restart landa-api.service
+sleep 2
+systemctl --no-pager --full status landa-api.service || true
+
+# open port (NixOS firewall — best-effort)
+if command -v iptables >/dev/null 2>&1; then
+  iptables -C INPUT -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null \
+    || iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT || true
+fi
+# nixos firewall interface often uses nixos-fw chain
+if iptables -L nixos-fw -n >/dev/null 2>&1; then
+  iptables -C nixos-fw -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null \
+    || iptables -I nixos-fw -p tcp --dport "$PORT" -j ACCEPT || true
+fi
+
+echo ""
+echo "health:"
+curl -fsS "http://127.0.0.1:${PORT}/health" || echo "(api not responding yet — check journalctl -u landa-api)"
+echo ""
+# print seed key hint if we can find last seed log — else tell user to check journal
+journalctl -u landa-api -n 5 --no-pager 2>/dev/null || true
+echo ""
+echo "public:  http://$(curl -fsS ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}'):${PORT}/health"
+echo "auth:    Authorization: Bearer <key from seed — re-run landa-migrate seed on host if needed>"
+REMOTE
+
+# public IP from our side for edge default
+if [[ "$HOST" == *178.105.120.5* ]]; then
+  PUBLIC="http://178.105.120.5:${PORT}"
+else
+  PUBLIC="http://${HOST#*@}:${PORT}"
+fi
+
+echo ""
+echo "done."
+echo "  $PUBLIC/health"
+echo "  curl -s $PUBLIC/health | jq ."
+echo ""
+echo "get API key on host:"
+echo "  ssh $HOST 'cd $REMOTE_DIR && nix develop -c landa-migrate seed'"

@@ -17,8 +17,32 @@
       let
         pkgs = import nixpkgs { inherit system; };
         node = pkgs.nodejs_22;
+        deployScript = pkgs.writeShellApplication {
+          name = "landa-deploy";
+          runtimeInputs = with pkgs; [
+            openssh
+            git
+            coreutils
+            bash
+          ];
+          text = ''
+            exec ${./scripts/landa-deploy} "$@"
+          '';
+        };
       in
       {
+        packages.deploy = deployScript;
+        packages.default = deployScript;
+
+        apps.deploy = {
+          type = "app";
+          program = "${deployScript}/bin/landa-deploy";
+        };
+        apps.default = {
+          type = "app";
+          program = "${deployScript}/bin/landa-deploy";
+        };
+
         devShells.default = pkgs.mkShell {
           name = "landa";
           packages = with pkgs; [
@@ -28,7 +52,8 @@
             curl
             jq
             git
-            # firecracker only useful on linux+kvm hosts
+            openssh
+            deployScript
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ firecracker ];
 
@@ -54,7 +79,8 @@
             echo "  landa-pg start | stop | status | reset"
             echo "  landa-migrate"
             echo "  landa-dev          # migrate + api watch"
-            echo "  npm run demo       # memory seat demo"
+            echo "  landa-deploy       # push live API to DEPLOY_HOST (default edge)"
+            echo "  nix run .#deploy   # same"
             echo ""
           '';
         };

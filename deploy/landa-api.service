@@ -1,0 +1,29 @@
+[Unit]
+Description=landa control plane API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/landa
+Environment=NODE_ENV=production
+Environment=LANDA_ROOT=/var/lib/landa
+Environment=LANDA_DATA=/var/lib/landa/.data
+Environment=PGDATA=/var/lib/landa/.data/pg
+Environment=PGHOST=127.0.0.1
+Environment=PGPORT=5433
+Environment=PGUSER=landa
+Environment=PGPASSWORD=landa
+Environment=PGDATABASE=landa
+Environment=DATABASE_URL=postgres://landa:landa@127.0.0.1:5433/landa
+Environment=LANDA_API_HOST=0.0.0.0
+Environment=LANDA_API_PORT=8787
+Environment=PATH=/var/lib/landa/node_modules/.bin:/usr/bin:/bin
+# node from nix profile if present
+ExecStartPre=/var/lib/landa/scripts/landa-pg start
+ExecStart=/bin/sh -c 'cd /var/lib/landa && exec nix --extra-experimental-features "nix-command flakes" develop -c npm run api'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
