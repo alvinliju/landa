@@ -21,13 +21,15 @@ export DATABASE_URL="${DATABASE_URL:-postgres://$PGUSER:$PGPASSWORD@$PGHOST:$PGP
 export PATH="$ROOT/scripts:$PATH"
 mkdir -p "$LANDA_DATA"
 
-NIX="nix --extra-experimental-features nix-command\ flakes"
+nixd() {
+  nix --extra-experimental-features "nix-command flakes" develop -c "$@"
+}
 
 echo "==> pg start"
-$NIX develop -c landa-pg start >/dev/null
+nixd landa-pg start >/dev/null
 
 echo "==> mint API key (write to .data/dev-api-key)"
-$NIX develop -c node --input-type=module <<'NODE'
+nixd node --input-type=module <<'NODE'
 import { createHash, randomBytes } from "node:crypto";
 import { writeFileSync, mkdirSync } from "node:fs";
 import postgres from "postgres";
@@ -74,7 +76,7 @@ auth() {
 }
 
 echo "==> CLI demo"
-$NIX develop -c npm run demo
+nixd npm run demo
 
 echo "==> HTTP health"
 curl -sS "$BASE/health"; echo
