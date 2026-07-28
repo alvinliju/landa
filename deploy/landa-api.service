@@ -16,14 +16,14 @@ Environment=PGUSER=landa
 Environment=PGPASSWORD=landa
 Environment=PGDATABASE=landa
 Environment=DATABASE_URL=postgres://landa:landa@127.0.0.1:5433/landa
-Environment=LANDA_API_HOST=0.0.0.0
+# nginx proxies from landa.tharavad.xyz → this
+Environment=LANDA_API_HOST=127.0.0.1
 Environment=LANDA_API_PORT=8787
-Environment=PATH=/var/lib/landa/node_modules/.bin:/usr/bin:/bin
-# node from nix profile if present
-ExecStartPre=/var/lib/landa/scripts/landa-pg start
-ExecStart=/bin/sh -c 'cd /var/lib/landa && exec nix --extra-experimental-features "nix-command flakes" develop -c npm run api'
+Environment=PATH=/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/var/lib/landa/node_modules/.bin
+ExecStartPre=/run/current-system/sw/bin/env PATH=/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin bash -c 'cd /var/lib/landa && nix --extra-experimental-features "nix-command flakes" develop -c landa-pg start'
+ExecStart=/run/current-system/sw/bin/env PATH=/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin bash -c 'cd /var/lib/landa && exec nix --extra-experimental-features "nix-command flakes" develop -c npm run api'
 Restart=on-failure
-RestartSec=3
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
