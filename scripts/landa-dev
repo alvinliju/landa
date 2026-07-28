@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# start pg → migrate → seed → api (what you test ≈ what you run)
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+landa-pg start
+npm install --silent
+landa-migrate
+landa-migrate seed
+
+echo ""
+echo "api → http://127.0.0.1:${LANDA_API_PORT:-8787}"
+echo "health → curl -s localhost:${LANDA_API_PORT:-8787}/health | jq ."
+echo ""
+exec npm run api:dev

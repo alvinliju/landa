@@ -25,8 +25,18 @@ Unit of work: **Computer**
 ```bash
 cd ~/Documents/landa
 npm install
-npm run demo
+npm run demo          # memory seat, no db
+
+# control plane (Hono + Postgres) — same shape as deploy
+nix develop           # or: export DATABASE_URL=… if pg already local
+landa-pg start
+npm install
+landa-migrate && landa-migrate seed   # prints API key once
+npm run api:dev
+# curl -s localhost:8787/health | jq .
 ```
+
+See `docs/control-plane.md`.
 
 ## the game
 

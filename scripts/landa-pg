@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# local postgres for landa — same DATABASE_URL shape as deploy
+set -euo pipefail
+
+: "${LANDA_DATA:=$(pwd)/.data}"
+: "${PGDATA:=$LANDA_DATA/pg}"
+: "${PGHOST:=127.0.0.1}"
+: "${PGPORT:=5433}"
+: "${PGUSER:=landa}"
+: "${PGPASSWORD:=landa}"
+: "${PGDATABASE:=landa}"
+
+export PGDATA PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
+
+mkdir -p "$LANDA_DATA"
+
+cmd="${1:-status}"
+
+case "$cmd" in
+  start)
+    if [[ ! -f "$PGDATA/PG_VERSION" ]]; then
+      echo "initdb $PGDATA"
+      initdb -D "$PGDATA" --auth=trust --username="$PGUSER"
+      cat >>"$PGDATA/postgresql.conf" <<EOF
+port = $PGPORT
+listen_addresses = '127.0.0.1'
+unix_socket_directories = '$LANDA_DATA'
+EOF
+      cat >"$PGDATA/pg_hba.conf" <<EOF
+local all all trust
+host all all 127.0.0.1/32 trust
+host all all ::1/128 trust
+EOF
+    fi
+    if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
+      echo "postgres already running on $PGHOST:$PGPORT"
+    else
+      pg_ctl -D "$PGDATA" -l "$LANDA_DATA/pg.log" -o "-k $LANDA_DATA" start
+      echo "postgres started → $PGHOST:$PGPORT (log: $LANDA_DATA/pg.log)"
+    fi
+    # wait ready
+    for i in $(seq 1 30); do
+      if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.2
+    done
+    # create db if missing
+    if ! psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$PGDATABASE'" | grep -q 1; then
+      createdb -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" "$PGDATABASE"
+      echo "created database $PGDATABASE"
+    fi
+    # pgcrypto / gen_random_uuid
+    psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto;'
+    echo "DATABASE_URL=postgres://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE"
+    ;;
+  stop)
+    if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
+      pg_ctl -D "$PGDATA" stop -m fast
+      echo "postgres stopped"
+    else
+      echo "postgres not running"
+    fi
+    ;;
+  status)
+    if pg_ctl -D "$PGDATA" status; then
+      pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" || true
+    fi
+    ;;
+  reset)
+    "$0" stop || true
+    rm -rf "$PGDATA"
+    echo "wiped $PGDATA"
+    "$0" start
+    ;;
+  *)
+    echo "usage: landa-pg start|stop|status|reset" >&2
+    exit 1
+    ;;
+esac

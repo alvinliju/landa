@@ -1,7 +1,7 @@
 {
   "name": "landa",
   "version": "0.0.1",
-  "description": "Computers for agents — control plane + swappable seat backends",
+  "description": "Computers for agents — control plane API + Firecracker seats",
   "type": "module",
   "private": true,
   "bin": {
@@ -15,10 +15,13 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts",
-    "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
-    "demo": "tsx src/cli.ts demo"
+    "demo": "tsx src/cli.ts demo",
+    "api": "tsx src/api/server.ts",
+    "api:dev": "tsx watch src/api/server.ts",
+    "migrate": "tsx scripts/migrate.ts up",
+    "migrate:seed": "tsx scripts/migrate.ts seed",
+    "dev": "bash scripts/landa-dev"
   },
   "engines": {
     "node": ">=20"
@@ -26,11 +29,16 @@
   "keywords": [
     "agents",
     "sandbox",
-    "mcp",
-    "computer-use",
-    "control-plane"
+    "firecracker",
+    "control-plane",
+    "hono"
   ],
   "license": "MIT",
+  "dependencies": {
+    "@hono/node-server": "^1.14.1",
+    "hono": "^4.7.7",
+    "postgres": "^3.4.5"
+  },
   "devDependencies": {
     "@types/node": "^22.13.10",
     "tsx": "^4.19.3",
