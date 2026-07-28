@@ -60,7 +60,9 @@ case "$cmd" in
         fi
         mkdir -p "$PGDATA" "$LANDA_DATA"
         chown -R landa:landa "$LANDA_DATA" 2>/dev/null || chown -R landa "$LANDA_DATA"
-        su -s "$SHELL_BIN" landa -c "initdb -D '$PGDATA' --auth=trust --username='$PGUSER'"
+        # keep full PATH so landa user finds nix-provided initdb/pg_ctl
+        PG_PATH="$PATH"
+        su -s "$SHELL_BIN" landa -c "export PATH='$PG_PATH'; initdb -D '$PGDATA' --auth=trust --username='$PGUSER'"
         cat >>"$PGDATA/postgresql.conf" <<EOF
 port = $PGPORT
 listen_addresses = '127.0.0.1'
@@ -88,10 +90,11 @@ EOF
     fi
     if [[ "$(id -u)" -eq 0 ]]; then
       SHELL_BIN="$(command -v bash || command -v sh)"
-      if su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' status" >/dev/null 2>&1; then
+      PG_PATH="$PATH"
+      if su -s "$SHELL_BIN" landa -c "export PATH='$PG_PATH'; pg_ctl -D '$PGDATA' status" >/dev/null 2>&1; then
         echo "postgres already running on $PGHOST:$PGPORT"
       else
-        su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' -l '$LANDA_DATA/pg.log' -o '-k $LANDA_DATA' start"
+        su -s "$SHELL_BIN" landa -c "export PATH='$PG_PATH'; pg_ctl -D '$PGDATA' -l '$LANDA_DATA/pg.log' -o '-k $LANDA_DATA' start"
         echo "postgres started → $PGHOST:$PGPORT (log: $LANDA_DATA/pg.log)"
       fi
     else
@@ -118,8 +121,9 @@ EOF
   stop)
     if [[ "$(id -u)" -eq 0 ]]; then
       SHELL_BIN="$(command -v bash || command -v sh)"
-      su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' status" >/dev/null 2>&1 \
-        && su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' stop -m fast" \
+      PG_PATH="$PATH"
+      su -s "$SHELL_BIN" landa -c "export PATH='$PG_PATH'; pg_ctl -D '$PGDATA' status" >/dev/null 2>&1 \
+        && su -s "$SHELL_BIN" landa -c "export PATH='$PG_PATH'; pg_ctl -D '$PGDATA' stop -m fast" \
         && echo "postgres stopped" || echo "postgres not running"
     else
       if pg_ctl -D "$PGDATA" status >/dev/null 2>&1; then
@@ -133,7 +137,8 @@ EOF
   status)
     if [[ "$(id -u)" -eq 0 ]]; then
       SHELL_BIN="$(command -v bash || command -v sh)"
-      su -s "$SHELL_BIN" landa -c "pg_ctl -D '$PGDATA' status" || true
+      PG_PATH="$PATH"
+      su -s "$SHELL_BIN" landa -c "export PATH='$PG_PATH'; pg_ctl -D '$PGDATA' status" || true
     else
       pg_ctl -D "$PGDATA" status || true
     fi
