@@ -46,8 +46,7 @@
         devShells.default = pkgs.mkShell {
           name = "landa";
           packages = with pkgs; [
-            node
-            nodePackages.npm
+            node # includes npm
             postgresql_16
             curl
             jq

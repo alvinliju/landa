@@ -53,3 +53,21 @@ npm run api:dev
 ```
 
 Same `DATABASE_URL`, same migrations, same binary path on a server.
+
+## public deploy (internet)
+
+```bash
+nix run .#deploy
+# or: ./scripts/landa-deploy
+# or: DEPLOY_HOST=root@178.105.120.5 ./scripts/landa-deploy
+```
+
+Default: **edge** → `/var/lib/landa` → `http://178.105.120.5:8787`
+
+```bash
+curl -s http://178.105.120.5:8787/health
+ssh root@178.105.120.5 'cd /var/lib/landa && nix develop -c landa-migrate seed'
+curl -s -H "Authorization: Bearer $LANDA_API_KEY" http://178.105.120.5:8787/v1/me
+```
+
+Service on host: `systemctl status landa-api`
