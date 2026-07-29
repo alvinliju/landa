@@ -266,4 +266,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ cmd }),
     }),
+  /** Paths must be under /workspace (not /work). Max 1 MiB content. */
+  sessionWriteFile: (id: string, path: string, content: string) =>
+    request<{ ok: boolean; path: string }>(`/v1/sessions/${id}/files`, {
+      method: "POST",
+      body: JSON.stringify({ path, content }),
+    }),
+  sessionReadFile: (id: string, path: string) =>
+    request<{ file: { path: string; content: string } }>(
+      `/v1/sessions/${id}/files?path=${encodeURIComponent(path)}&mode=read`,
+    ),
+  sessionListFiles: (id: string, path = "/workspace") =>
+    request<{ entries: { name: string; type?: string; size?: number }[] }>(
+      `/v1/sessions/${id}/files?path=${encodeURIComponent(path)}&mode=list`,
+    ),
 };

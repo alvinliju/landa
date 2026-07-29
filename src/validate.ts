@@ -146,7 +146,18 @@ export function parseCmd(raw: unknown): { cmd: string } | ValErr {
   return { cmd };
 }
 
-export function parseFilePath(raw: unknown): { path: string } | ValErr {
+export type FilePathRoots = "work" | "workspace";
+
+/**
+ * Validate a guest file path.
+ * - sandboxes: absolute under /work (default)
+ * - sessions: absolute under /workspace (pass roots: ["workspace"])
+ * Relative paths ok (backend may resolve under /root).
+ */
+export function parseFilePath(
+  raw: unknown,
+  opts?: { roots?: FilePathRoots[] },
+): { path: string } | ValErr {
   if (typeof raw !== "string" || !raw.trim()) {
     return {
       error: "invalid_path",
@@ -169,20 +180,28 @@ export function parseFilePath(raw: unknown): { path: string } | ValErr {
       field: "path",
     };
   }
-  // keep guests under /work when absolute-looking escapes
-  if (path.startsWith("/") && !path.startsWith("/work")) {
-    return {
-      error: "invalid_path",
-      message: "absolute paths must be under /work",
-      field: "path",
-    };
-  }
   if (path.includes("..")) {
     return {
       error: "invalid_path",
       message: "path must not contain ..",
       field: "path",
     };
+  }
+  const roots = opts?.roots ?? (["work"] as FilePathRoots[]);
+  const allowedPrefixes = roots.map((r) =>
+    r === "workspace" ? "/workspace" : "/work",
+  );
+  if (path.startsWith("/")) {
+    const ok = allowedPrefixes.some(
+      (p) => path === p || path.startsWith(`${p}/`),
+    );
+    if (!ok) {
+      return {
+        error: "invalid_path",
+        message: `absolute paths must be under ${allowedPrefixes.join(" or ")}`,
+        field: "path",
+      };
+    }
   }
   return { path };
 }

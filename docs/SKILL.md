@@ -66,19 +66,30 @@ start = new VM + push
 
 Guest is still **offline**. Repo clone happens on the **API host** at create if you pass `repo`.
 
+## Hard constraints (do not re-probe)
+
+| Fact | Implication |
+|------|-------------|
+| **No git in guest** | `git: command not found`. Clone only via `POST /v1/sessions` with `repo` (API host has git + network). |
+| **Disk is small** | Guest rootfs ~256 MiB, **/workspace ~160 MiB free**. Keep trees lean; no node_modules dumps. |
+| **Files API exists** | `POST/GET /v1/sessions/:id/files` — paths **must** be under `/workspace` (not `/work`). Max **1 MiB** content per write. |
+| **Sandboxes ≠ sessions** | Sandbox files live under `/work`. Session workspace is `/workspace` (host volume on stop/start). |
+
 ## Session API
 
 | Method | Path | Body | Notes |
 |--------|------|------|--------|
 | GET | `/v1/sessions` | — | list mine |
 | GET | `/v1/sessions/:id` | — | one |
-| POST | `/v1/sessions` | `{ "name"?, "repo"? }` | create volume + boot + push |
+| POST | `/v1/sessions` | `{ "name"?, "repo"? }` | create volume + **host** git clone + boot + push |
 | POST | `/v1/sessions/:id/start` | — | boot + restore `/workspace` |
 | POST | `/v1/sessions/:id/stop` | — | save `/workspace` + kill seat |
 | POST | `/v1/sessions/:id/exec` | `{ "cmd" }` | run in session seat |
+| POST | `/v1/sessions/:id/files` | `{ "path", "content" }` | write under **`/workspace`** only |
+| GET | `/v1/sessions/:id/files` | `path`, `mode=read\|list` | read/list under `/workspace` |
 | DELETE | `/v1/sessions/:id` | — | kill + **delete volume** |
 
-`repo` = public `https://…git` preferred (host needs git + network).
+`repo` = public `https://…git` preferred (**API host** clones; guest has no git).
 
 ## “Go to cloud” recipe (copy this)
 
@@ -122,11 +133,14 @@ User: "wipe my session" / "delete cloud workspace"
   → DELETE /v1/sessions/:id
 ```
 
-### Session exec tips
+### Session exec + files tips
 
 - Prefer absolute paths under **`/workspace`**
+- Upload source via **`POST …/files`** (≤1 MiB) — not chunked base64 exec unless bulk
 - Multi-line: `set -euo pipefail`
-- Guest offline: no `pip`/`apk`/`curl` outbound
+- Guest offline: no `pip`/`apk`/`curl` outbound, **no `git`**
+- Clone at create: `{ "repo": "https://…" }` — host-side shallow clone into volume
+- Disk budget: stay well under ~160 MiB free on `/workspace`
 - Long agent loops: many `exec` calls on **same session id**; only `stop` when pausing
 - Spawning disposable workers: use `/v1/sandboxes` with same API key (from orchestrator)
 
@@ -263,8 +277,8 @@ async function withVm<T>(label: string, fn: (id: string) => Promise<T>) {
 
 | Have | Don’t have |
 |------|------------|
-| python3 stdlib, jq, bash, coreutils | pip, apk, curl net, node, browser |
-| `/workspace` (sessions) | GPU |
+| python3 stdlib, jq, bash, coreutils | pip, apk, curl net, **git**, node, browser |
+| `/workspace` (sessions, ~160 MiB free) | GPU |
 | `/work/*` (workers) | inventing template names |
 
 Prefer `result.json`:

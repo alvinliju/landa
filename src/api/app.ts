@@ -659,27 +659,10 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const cmdP = parseCmd(body.cmd);
     if (isErr(cmdP)) return c.json(cmdP, 400);
 
-    const rows = await sql()`
-      SELECT computer_id, status FROM sessions
-      WHERE id = ${id}::uuid AND user_id = ${a.userId}
-      LIMIT 1
-    `;
-    const row = rows[0] as
-      | { computer_id: string | null; status: string }
-      | undefined;
-    if (!row) return c.json({ error: "not found" }, 404);
-    if (row.status !== "running" || !row.computer_id) {
-      return c.json(
-        {
-          error: "session_not_running",
-          message: "Start the session first",
-          status: row.status,
-        },
-        409,
-      );
-    }
+    const live = await liveSessionComputer(a.userId, id);
+    if (!live.ok) return c.json(live.body, live.status as 400);
     try {
-      const result = await plane.exec(row.computer_id, {
+      const result = await plane.exec(live.computerId, {
         cmd: cmdP.cmd,
         timeoutMs: 120_000,
       });
@@ -688,6 +671,86 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         WHERE id = ${id}::uuid
       `;
       return c.json({ result });
+    } catch (e) {
+      const { status, body: errBody } = landaErrorToHttp(e);
+      return c.json(errBody, status as 400);
+    }
+  });
+
+  /**
+   * Session files — same plane.writeFile/readFile as sandboxes, but paths
+   * must live under /workspace (synced to host volume on stop).
+   * Guest has no git; prefer POST create with repo= for clones.
+   * Disk is small (~256MiB rootfs, ~160MiB free) — keep uploads lean.
+   */
+  app.post("/v1/sessions/:id/files", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const id = c.req.param("id") as string;
+    const bad = okUuid(id);
+    if (bad) return c.json(bad, 400);
+    if (!a.userId) return c.json({ error: "user identity required" }, 401);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      path?: string;
+      content?: string;
+    };
+    const pathP = parseFilePath(body.path, { roots: ["workspace"] });
+    if (isErr(pathP)) return c.json(pathP, 400);
+    const contentP = parseFileContent(body.content);
+    if (isErr(contentP)) return c.json(contentP, 400);
+    const live = await liveSessionComputer(a.userId, id);
+    if (!live.ok) return c.json(live.body, live.status as 400);
+    try {
+      await plane.writeFile(live.computerId, {
+        path: pathP.path,
+        content: contentP.content,
+      });
+      await sql()`
+        UPDATE sessions SET last_attach_at = now(), updated_at = now()
+        WHERE id = ${id}::uuid
+      `;
+      return c.json({ ok: true, path: pathP.path });
+    } catch (e) {
+      const { status, body: errBody } = landaErrorToHttp(e);
+      return c.json(errBody, status as 400);
+    }
+  });
+
+  app.get("/v1/sessions/:id/files", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const id = c.req.param("id") as string;
+    const bad = okUuid(id);
+    if (bad) return c.json(bad, 400);
+    if (!a.userId) return c.json({ error: "user identity required" }, 401);
+    const pathRaw = c.req.query("path") ?? "/workspace";
+    const mode = c.req.query("mode") ?? "list"; // list | read
+    if (mode !== "list" && mode !== "read") {
+      return c.json(
+        {
+          error: "invalid_mode",
+          message: "mode must be list or read",
+          field: "mode",
+        },
+        400,
+      );
+    }
+    let path = pathRaw;
+    if (mode === "read" || pathRaw !== "/workspace") {
+      const pathP = parseFilePath(
+        pathRaw === "." ? "/workspace" : pathRaw,
+        { roots: ["workspace"] },
+      );
+      if (isErr(pathP)) return c.json(pathP, 400);
+      path = pathP.path;
+    }
+    const live = await liveSessionComputer(a.userId, id);
+    if (!live.ok) return c.json(live.body, live.status as 400);
+    try {
+      if (mode === "read") {
+        const file = await plane.readFile(live.computerId, path);
+        return c.json({ file });
+      }
+      const entries = await plane.listFiles(live.computerId, path);
+      return c.json({ entries });
     } catch (e) {
       const { status, body: errBody } = landaErrorToHttp(e);
       return c.json(errBody, status as 400);
@@ -1320,6 +1383,38 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       };
     }
     return { ok: true, id: row.metadata.computerId };
+  }
+
+  async function liveSessionComputer(
+    userId: string,
+    sessionId: string,
+  ): Promise<
+    | { ok: true; computerId: string }
+    | { ok: false; status: number; body: Record<string, unknown> }
+  > {
+    const rows = await sql()`
+      SELECT computer_id, status FROM sessions
+      WHERE id = ${sessionId}::uuid AND user_id = ${userId}
+      LIMIT 1
+    `;
+    const row = rows[0] as
+      | { computer_id: string | null; status: string }
+      | undefined;
+    if (!row) {
+      return { ok: false, status: 404, body: { error: "not found" } };
+    }
+    if (row.status !== "running" || !row.computer_id) {
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          error: "session_not_running",
+          message: "Start the session first",
+          status: row.status,
+        },
+      };
+    }
+    return { ok: true, computerId: row.computer_id };
   }
 
   return app;
