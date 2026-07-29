@@ -30,6 +30,7 @@ import { GuidePage } from "@/pages/guide-page";
 import { OverviewPage } from "@/pages/overview-page";
 import { SandboxDetailPage } from "@/pages/sandbox-detail-page";
 import { SandboxesPage } from "@/pages/sandboxes-page";
+import { SessionsPage } from "@/pages/sessions-page";
 import { SettingsPage } from "@/pages/settings-page";
 import { SignInPage } from "@/pages/sign-in-page";
 import { TemplatesPage } from "@/pages/templates-page";
@@ -192,6 +193,7 @@ export default function App() {
               onOpenSandbox={openSandbox}
             />
           ) : null}
+          {route.page === "sessions" ? <SessionsPage /> : null}
           {route.page === "sandboxes" ? (
             <SandboxesPage onOpen={openSandbox} />
           ) : null}

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import type { AppEnv, AuthProject } from "../auth.js";
 import { hashApiKey, requireAuth } from "../auth.js";
@@ -17,6 +17,15 @@ import {
   parseTemplate,
   parseTtlSec,
 } from "../validate.js";
+import {
+  cloneRepo,
+  ensureVolume,
+  parseGuestIp,
+  pushWorkspace,
+  pullWorkspace,
+  sessionVolumePath,
+} from "../sessions.js";
+import { rm } from "node:fs/promises";
 
 type Sql = ReturnType<typeof sql>;
 
@@ -310,6 +319,415 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       )
     `;
     return c.json({ ok: true, apiKey: updated[0] });
+  });
+
+  // ── landa-run v0: persistent sessions (host volume + optional live seat) ──
+
+  app.get("/v1/sessions", requireAuth, async (c) => {
+    const a = c.get("auth");
+    if (!a.userId) {
+      return c.json({ error: "user identity required", sessions: [] }, 401);
+    }
+    const rows = await sql()`
+      SELECT id, name, status, repo_url, sandbox_id, computer_id, guest_ip,
+             ssh_hint, error, created_at, updated_at, last_attach_at, volume_path
+      FROM sessions
+      WHERE user_id = ${a.userId} AND status != 'destroyed'
+      ORDER BY updated_at DESC
+    `;
+    return c.json({
+      sessions: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        status: r.status,
+        repoUrl: r.repo_url,
+        computerId: r.computer_id,
+        guestIp: r.guest_ip,
+        sshHint: r.ssh_hint,
+        error: r.error,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        lastAttachAt: r.last_attach_at,
+        // volume_path is host-internal — hide full path from clients
+        hasVolume: Boolean(r.volume_path),
+      })),
+    });
+  });
+
+  app.get("/v1/sessions/:id", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const id = c.req.param("id") as string;
+    const bad = okUuid(id);
+    if (bad) return c.json(bad, 400);
+    if (!a.userId) return c.json({ error: "user identity required" }, 401);
+    const rows = await sql()`
+      SELECT id, name, status, repo_url, computer_id, guest_ip, ssh_hint,
+             error, created_at, updated_at, last_attach_at
+      FROM sessions
+      WHERE id = ${id}::uuid AND user_id = ${a.userId}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return c.json({ error: "not found" }, 404);
+    return c.json({
+      session: {
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        repoUrl: row.repo_url,
+        computerId: row.computer_id,
+        guestIp: row.guest_ip,
+        sshHint: row.ssh_hint,
+        error: row.error,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        lastAttachAt: row.last_attach_at,
+      },
+    });
+  });
+
+  /**
+   * Create session: volume on host + optional git clone + boot seat + push /workspace.
+   * Body: { name?, repo? }
+   */
+  app.post("/v1/sessions", requireAuth, async (c) => {
+    const a = c.get("auth");
+    if (!a.userId) {
+      return c.json({ error: "user identity required" }, 401);
+    }
+    if (!plane.backends().includes("firecracker")) {
+      return c.json(
+        {
+          error: "backend_unavailable",
+          message: "landa-run needs firecracker on this host",
+        },
+        501,
+      );
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      name?: string;
+      repo?: string;
+      repoUrl?: string;
+    };
+    const nameP = parseLabel(body.name, {
+      field: "name",
+      defaultValue: `run-${Date.now().toString(36)}`,
+      max: 48,
+    });
+    if (isErr(nameP)) return c.json(nameP, 400);
+    const name = nameP.label.replace(/\s+/g, "-").toLowerCase();
+    const repoUrl =
+      typeof body.repo === "string"
+        ? body.repo.trim()
+        : typeof body.repoUrl === "string"
+          ? body.repoUrl.trim()
+          : "";
+
+    const existing = await sql()`
+      SELECT id FROM sessions
+      WHERE user_id = ${a.userId} AND name = ${name} AND status != 'destroyed'
+      LIMIT 1
+    `;
+    if (existing[0]) {
+      return c.json(
+        {
+          error: "duplicate_name",
+          message: `Session "${name}" already exists`,
+          field: "name",
+        },
+        409,
+      );
+    }
+
+    const sessionId = randomUUID();
+    const volumePath = sessionVolumePath(a.userId, sessionId);
+
+    if (repoUrl) {
+      if (!/^https?:\/\//i.test(repoUrl) && !/^git@/i.test(repoUrl)) {
+        return c.json(
+          {
+            error: "invalid_repo",
+            message: "repo must be https:// or git@ URL",
+            field: "repo",
+          },
+          400,
+        );
+      }
+      const cl = await cloneRepo(volumePath, repoUrl);
+      if (!cl.ok) {
+        await ensureVolume(volumePath);
+        // soft-fail: still create session with empty workspace
+        console.warn("[sessions] clone failed:", cl.error);
+      }
+    } else {
+      await ensureVolume(volumePath);
+    }
+
+    const db = sql();
+    await db`
+      INSERT INTO sessions (
+        id, user_id, project_id, name, status, volume_path, repo_url
+      )
+      VALUES (
+        ${sessionId}::uuid,
+        ${a.userId},
+        ${a.projectId}::uuid,
+        ${name},
+        'creating',
+        ${volumePath},
+        ${repoUrl || null}
+      )
+    `;
+
+    try {
+      const started = await bootSessionSeat(plane, volumePath, name);
+      await db`
+        UPDATE sessions SET
+          status = 'running',
+          computer_id = ${started.computerId},
+          guest_ip = ${started.guestIp},
+          ssh_hint = ${started.sshHint},
+          error = null,
+          updated_at = now(),
+          last_attach_at = now()
+        WHERE id = ${sessionId}::uuid
+      `;
+      return c.json(
+        {
+          session: {
+            id: sessionId,
+            name,
+            status: "running",
+            repoUrl: repoUrl || null,
+            computerId: started.computerId,
+            guestIp: started.guestIp,
+            sshHint: started.sshHint,
+            workspace: "/workspace",
+          },
+          hint: "Persistent volume on host. stop keeps files; start boots a new seat and restores /workspace.",
+        },
+        201,
+      );
+    } catch (e) {
+      await db`
+        UPDATE sessions SET
+          status = 'error',
+          error = ${String(e).slice(0, 500)},
+          updated_at = now()
+        WHERE id = ${sessionId}::uuid
+      `;
+      return c.json(
+        {
+          error: "session_boot_failed",
+          message: String(e).slice(0, 500),
+          sessionId,
+        },
+        500,
+      );
+    }
+  });
+
+  /** Stop: pull /workspace → host volume, destroy seat, keep volume. */
+  app.post("/v1/sessions/:id/stop", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const id = c.req.param("id") as string;
+    const bad = okUuid(id);
+    if (bad) return c.json(bad, 400);
+    if (!a.userId) return c.json({ error: "user identity required" }, 401);
+    const db = sql();
+    const rows = await db<{
+      id: string;
+      status: string;
+      volume_path: string;
+      computer_id: string | null;
+      guest_ip: string | null;
+    }[]>`
+      SELECT id, status, volume_path, computer_id, guest_ip
+      FROM sessions
+      WHERE id = ${id}::uuid AND user_id = ${a.userId}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return c.json({ error: "not found" }, 404);
+    if (row.status === "destroyed") {
+      return c.json({ error: "destroyed" }, 410);
+    }
+
+    if (row.computer_id && row.guest_ip) {
+      await pullWorkspace(row.volume_path, row.guest_ip).catch(() => ({
+        ok: false as const,
+      }));
+      await plane.destroy(row.computer_id).catch(() => undefined);
+    }
+
+    await db`
+      UPDATE sessions SET
+        status = 'stopped',
+        computer_id = null,
+        guest_ip = null,
+        ssh_hint = null,
+        error = null,
+        updated_at = now()
+      WHERE id = ${id}::uuid
+    `;
+    return c.json({ ok: true, status: "stopped" });
+  });
+
+  /** Start: boot seat, push host volume → /workspace. */
+  app.post("/v1/sessions/:id/start", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const id = c.req.param("id") as string;
+    const bad = okUuid(id);
+    if (bad) return c.json(bad, 400);
+    if (!a.userId) return c.json({ error: "user identity required" }, 401);
+    if (!plane.backends().includes("firecracker")) {
+      return c.json({ error: "backend_unavailable" }, 501);
+    }
+    const db = sql();
+    const rows = await db<{
+      id: string;
+      name: string;
+      status: string;
+      volume_path: string;
+      computer_id: string | null;
+    }[]>`
+      SELECT id, name, status, volume_path, computer_id
+      FROM sessions
+      WHERE id = ${id}::uuid AND user_id = ${a.userId}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return c.json({ error: "not found" }, 404);
+    if (row.status === "destroyed") {
+      return c.json({ error: "destroyed" }, 410);
+    }
+    if (row.status === "running" && row.computer_id) {
+      const live = await plane.get(row.computer_id);
+      if (live?.status === "running") {
+        return c.json({
+          ok: true,
+          status: "running",
+          computerId: row.computer_id,
+          hint: "already running",
+        });
+      }
+    }
+
+    try {
+      const started = await bootSessionSeat(plane, row.volume_path, row.name);
+      await db`
+        UPDATE sessions SET
+          status = 'running',
+          computer_id = ${started.computerId},
+          guest_ip = ${started.guestIp},
+          ssh_hint = ${started.sshHint},
+          error = null,
+          updated_at = now(),
+          last_attach_at = now()
+        WHERE id = ${id}::uuid
+      `;
+      return c.json({
+        ok: true,
+        status: "running",
+        computerId: started.computerId,
+        guestIp: started.guestIp,
+        sshHint: started.sshHint,
+      });
+    } catch (e) {
+      await db`
+        UPDATE sessions SET
+          status = 'error',
+          error = ${String(e).slice(0, 500)},
+          updated_at = now()
+        WHERE id = ${id}::uuid
+      `;
+      return c.json(
+        { error: "session_start_failed", message: String(e).slice(0, 500) },
+        500,
+      );
+    }
+  });
+
+  /** Exec inside a running session seat. */
+  app.post("/v1/sessions/:id/exec", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const id = c.req.param("id") as string;
+    const bad = okUuid(id);
+    if (bad) return c.json(bad, 400);
+    if (!a.userId) return c.json({ error: "user identity required" }, 401);
+    const body = (await c.req.json().catch(() => ({}))) as { cmd?: string };
+    const cmdP = parseCmd(body.cmd);
+    if (isErr(cmdP)) return c.json(cmdP, 400);
+
+    const rows = await sql()`
+      SELECT computer_id, status FROM sessions
+      WHERE id = ${id}::uuid AND user_id = ${a.userId}
+      LIMIT 1
+    `;
+    const row = rows[0] as
+      | { computer_id: string | null; status: string }
+      | undefined;
+    if (!row) return c.json({ error: "not found" }, 404);
+    if (row.status !== "running" || !row.computer_id) {
+      return c.json(
+        {
+          error: "session_not_running",
+          message: "Start the session first",
+          status: row.status,
+        },
+        409,
+      );
+    }
+    try {
+      const result = await plane.exec(row.computer_id, {
+        cmd: cmdP.cmd,
+        timeoutMs: 120_000,
+      });
+      await sql()`
+        UPDATE sessions SET last_attach_at = now(), updated_at = now()
+        WHERE id = ${id}::uuid
+      `;
+      return c.json({ result });
+    } catch (e) {
+      const { status, body: errBody } = landaErrorToHttp(e);
+      return c.json(errBody, status as 400);
+    }
+  });
+
+  /** Destroy session: kill seat + delete host volume. */
+  app.delete("/v1/sessions/:id", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const id = c.req.param("id") as string;
+    const bad = okUuid(id);
+    if (bad) return c.json(bad, 400);
+    if (!a.userId) return c.json({ error: "user identity required" }, 401);
+    const db = sql();
+    const rows = await db<{
+      volume_path: string;
+      computer_id: string | null;
+    }[]>`
+      SELECT volume_path, computer_id FROM sessions
+      WHERE id = ${id}::uuid AND user_id = ${a.userId}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return c.json({ error: "not found" }, 404);
+    if (row.computer_id) {
+      await plane.destroy(row.computer_id).catch(() => undefined);
+    }
+    await rm(row.volume_path, { recursive: true, force: true }).catch(
+      () => undefined,
+    );
+    await db`
+      UPDATE sessions SET
+        status = 'destroyed',
+        computer_id = null,
+        guest_ip = null,
+        ssh_hint = null,
+        updated_at = now()
+      WHERE id = ${id}::uuid
+    `;
+    return c.json({ ok: true, status: "destroyed" });
   });
 
   app.get("/v1/backends", requireAuth, async (c) => {
@@ -905,4 +1323,41 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
   }
 
   return app;
+}
+
+/** Boot landa-agent seat and push host volume → /workspace */
+async function bootSessionSeat(
+  plane: ControlPlane,
+  volumePath: string,
+  name: string,
+): Promise<{ computerId: string; guestIp: string; sshHint: string }> {
+  const info = await plane.create({
+    name: `run-${name}`,
+    template: "landa-agent",
+    backend: "firecracker",
+    memoryMiB: Number(process.env.LANDA_FC_MEM_MIB ?? 256),
+    labels: { kind: "session", sessionName: name },
+  });
+  if (info.status !== "running") {
+    await plane.destroy(info.id).catch(() => undefined);
+    throw new Error(info.error || `seat status ${info.status}`);
+  }
+  const guestIp = parseGuestIp(info.endpoints, null);
+  if (!guestIp) {
+    await plane.destroy(info.id).catch(() => undefined);
+    throw new Error("no guest IP from firecracker seat");
+  }
+  // ensure /workspace exists then push volume
+  await plane.exec(info.id, {
+    cmd: "mkdir -p /workspace && chmod 755 /workspace",
+    timeoutMs: 15_000,
+  });
+  const push = await pushWorkspace(volumePath, guestIp);
+  if (!push.ok) {
+    // still return seat — empty workspace better than fail after boot
+    console.warn("[sessions] push workspace:", push.error);
+  }
+  const sshHint =
+    info.endpoints?.ssh ?? `ssh -i $LANDA_FC_SSH_KEY root@${guestIp}`;
+  return { computerId: info.id, guestIp, sshHint };
 }

@@ -1,6 +1,7 @@
 import {
   BookOpenIcon,
   BoxesIcon,
+  CloudIcon,
   KeyRoundIcon,
   LayoutDashboardIcon,
   SettingsIcon,
@@ -32,6 +33,7 @@ import type { LandaPage } from "@/lib/navigation";
 
 const nav = [
   { id: "overview" as const, title: "Overview", icon: LayoutDashboardIcon },
+  { id: "sessions" as const, title: "Sessions", icon: CloudIcon },
   { id: "sandboxes" as const, title: "VMs", icon: TerminalSquareIcon },
   { id: "templates" as const, title: "Templates", icon: BoxesIcon },
   { id: "api-keys" as const, title: "API keys", icon: KeyRoundIcon },

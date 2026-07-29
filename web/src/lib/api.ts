@@ -214,4 +214,56 @@ export const api = {
     }),
   revokeApiKey: (id: string) =>
     request<{ ok: boolean }>(`/v1/api-keys/${id}`, { method: "DELETE" }),
+
+  // landa-run sessions (persistent workspace)
+  sessions: () =>
+    request<{
+      sessions: {
+        id: string;
+        name: string;
+        status: string;
+        repoUrl: string | null;
+        computerId: string | null;
+        guestIp: string | null;
+        sshHint: string | null;
+        error: string | null;
+        createdAt: string;
+        updatedAt: string;
+        lastAttachAt: string | null;
+        hasVolume?: boolean;
+      }[];
+    }>("/v1/sessions"),
+  createSession: (body: { name?: string; repo?: string }) =>
+    request<{
+      session: {
+        id: string;
+        name: string;
+        status: string;
+        repoUrl: string | null;
+        computerId: string;
+        guestIp: string;
+        sshHint: string;
+        workspace: string;
+      };
+      hint?: string;
+    }>("/v1/sessions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  startSession: (id: string) =>
+    request<{ ok: boolean; status: string; computerId?: string }>(
+      `/v1/sessions/${id}/start`,
+      { method: "POST" },
+    ),
+  stopSession: (id: string) =>
+    request<{ ok: boolean; status: string }>(`/v1/sessions/${id}/stop`, {
+      method: "POST",
+    }),
+  destroySession: (id: string) =>
+    request<{ ok: boolean }>(`/v1/sessions/${id}`, { method: "DELETE" }),
+  sessionExec: (id: string, cmd: string) =>
+    request<{ result: ExecResult }>(`/v1/sessions/${id}/exec`, {
+      method: "POST",
+      body: JSON.stringify({ cmd }),
+    }),
 };
