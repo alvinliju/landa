@@ -88,14 +88,15 @@ curl -sS -X POST -H "Authorization: Bearer $LANDA_API_KEY" \\
 curl -sS -X DELETE -H "Authorization: Bearer $LANDA_API_KEY" \\
   "$LANDA_API_BASE/v1/sandboxes/<SANDBOX_ID>"`;
 
-  const skillHint = `Give your coding agent:
+  const skillHint = `Give your coding agent maximum context:
 
-1. LANDA_API_KEY (create under API keys in the console)
+1. LANDA_API_KEY (console → API keys → Create key)
 2. LANDA_API_BASE=${base}
-3. The skill file from the landa repo: docs/SKILL.md
+3. Full skill: docs/SKILL.md (landa-vms)
 
-Agents should: create → exec → destroy, prefer template landa-agent,
-and never log the full API key.`;
+That skill covers E2B-style loops, /work/in·out contracts, offline
+python3+jq limits, parallel seats, 429 recovery, and always-destroy
+cleanup. Template is ONLY landa-agent.`;
 
   return (
     <PageContainer className="flex flex-col gap-6 pb-12">

@@ -1,200 +1,316 @@
 ---
 name: landa-vms
 description: >
-  Spin up landa agent VMs (isolated Firecracker computers with offline python/bash/jq),
-  run shell commands, read/write files, and destroy seats. Use whenever the user or agent
-  needs a real machine for code execution, tool use, builds, or experiments — similar to
-  E2B/Daytona sandboxes. Requires LANDA_API_KEY.
+  Full-power skill for landa agent VMs: Firecracker microVMs with offline
+  python3/bash/jq. Create, exec, filesystem I/O, snapshot, destroy. Use for
+  untrusted code, data transforms, multi-step jobs, parallel seats, and any
+  workload that needs a disposable Linux box without touching the host.
+  Requires LANDA_API_KEY. Template is always landa-agent only.
 ---
 
-# landa VMs — coding-agent skill
+# landa VMs — maximum-utilization skill for coding agents
 
-## What this is
+You are controlling **landa**: a control plane that gives agents **real
+Firecracker microVMs** (same isolation class as E2B). Treat each VM as a
+**disposable computer**, not a chat tool.
 
-**landa** is a control plane for **ephemeral agent computers** (VMs).  
-Pattern matches industry sandboxes (E2B, Daytona, etc.):
+**Live product surface today**
 
-| Competitor pattern | landa equivalent |
-|--------------------|------------------|
-| `E2B_API_KEY` | `LANDA_API_KEY` |
-| `Sandbox.create()` | `POST /v1/sandboxes` |
-| `runCode` / `commands.run` | `POST /v1/sandboxes/:id/exec` |
-| filesystem upload/download | `POST/GET …/files` |
-| `sandbox.kill()` / context exit | `DELETE /v1/sandboxes/:id` |
-| template / image | `template: "landa-agent"` only (for now) |
-
-Each VM is a short-lived Linux seat. Default image has **offline** `python3`, `bash`, `jq` and workspace dirs under `/work`.
-
-**Do not** invent other template slugs. Only **`landa-agent`** is live; more templates are coming later.
-
----
-
-## When to use
-
-- Run untrusted or generated code safely off the host
-- Install-free offline tools already on the agent image
-- Multi-step jobs that need a real shell + filesystem
-- Parallel “one seat per task” workflows (respect concurrent limits)
-
-## When not to use
-
-- Pure Q&A with no execution
-- Long-lived servers (TTL is hours, not days)
-- Secrets you cannot put on an ephemeral disk
+| Item | Value |
+|------|--------|
+| Template | **`landa-agent` only** (others: coming soon — never invent slugs) |
+| Isolation | Firecracker microVM (own kernel) |
+| Guest tools | bash, busybox, python3 **stdlib**, jq, coreutils, find, grep, sed |
+| Network in guest | **Offline by design** — no `apk` / `pip` / `curl` to the internet |
+| Workspace | `/work/in` (inputs) · `/work/out` (outputs) · `/work/task.py` |
+| TTL | default **8 hours**; always destroy yourself |
+| Auth | `Authorization: Bearer $LANDA_API_KEY` |
+| API base | `http://landa.tharavad.xyz` (or `LANDA_API_BASE`) |
 
 ---
 
-## Setup (user once)
+## 0. Mental model (how people actually use sandboxes)
 
-1. Open **http://landa.tharavad.xyz** → sign up / sign in  
-2. Sidebar **API keys** → **Create key** → copy secret (`landa_…`)  
-3. Export (never commit):
+Synthesized from **Hacker News**, **r/AI_Agents**, E2B/Daytona patterns, and
+production agent threads:
+
+### Patterns that win
+
+1. **Sandbox as a tool, harness outside** (HN consensus)  
+   Your reasoning/LLM loop stays on the host (or orchestrator). The VM is a
+   **tool** for exec + files — not the place you keep secrets or the agent brain.
+   landa matches this: you hold `LANDA_API_KEY`; the guest never needs it.
+
+2. **One seat per unit of untrusted work** (E2B / Reddit “disposable box”)  
+   One messy experiment = one VM. When done → destroy. Do not reuse a dirty
+   seat across unrelated tasks unless you intentionally want state.
+
+3. **Write → run → harvest → kill** (code interpreter loop)  
+   Upload inputs + script → exec → read `/work/out` or stdout → destroy.
+   Same shape as E2B Code Interpreter / Jupyter-in-sandbox.
+
+4. **Parallel isolation** (Freestyle/HN “fork 10 ideas”)  
+   When you must try N approaches fairly, spawn **N sandboxes** (respect
+   concurrent limit), run each recipe, compare outputs, destroy all.
+   landa does not yet offer snapshot-fork; parallel create is the pattern.
+
+5. **Persistent only when needed** (X/HN agentbox discussion)  
+   Prefer on-demand seats from current inputs. “Long-lived box with credentials”
+   is harder to secure; landa’s 8h TTL + offline encourages short jobs.
+
+6. **Structured results, not chat logs**  
+   Prefer `/work/out/result.json` with `{ "ok", "summary", "data" }` so the
+   orchestrator can parse deterministically.
+
+### What people struggle with (avoid)
+
+- Leaving sandboxes running (cost / quota) → always `DELETE`
+- Installing packages at runtime → **not available offline** on landa-agent
+- Putting host secrets *inside* the guest → keep keys on harness side
+- Treating sandbox = full internet laptop → landa-agent is offline toolkit
+- Ignoring exit codes → always check `result.exitCode`
+
+---
+
+## 1. Setup (human once; agent reads env)
 
 ```bash
-export LANDA_API_KEY='landa_xxxxxxxx'           # from console, once
+export LANDA_API_KEY='landa_…'              # Console → API keys → Create
 export LANDA_API_BASE='http://landa.tharavad.xyz'
 ```
 
-Optional direct API host: `http://landa-back.tharavad.xyz`.
-
-Auth on every `/v1/*` call:
-
 ```http
 Authorization: Bearer $LANDA_API_KEY
+Content-Type: application/json
 ```
 
-Also accepted: `X-Api-Key: $LANDA_API_KEY`.
+Also: `X-Api-Key: $LANDA_API_KEY`.
+
+Keys are scoped to the user’s project; VMs are owned by that user.
 
 ---
 
-## Canonical lifecycle (always)
+## 2. Lifecycle (non-negotiable)
 
 ```
-create → (wait running) → exec / files / snapshot → destroy
+POST /v1/sandboxes  →  status running
+        ↓
+   files / exec / snapshot   (repeat)
+        ↓
+DELETE /v1/sandboxes/:id     ← always, success or failure
 ```
 
-**Always destroy** when the job finishes or fails. Same rule as E2B “kill sandbox” / Python `with` cleanup.
-
-Default **TTL: 8 hours** if you forget; reaper will destroy expired seats. Do not rely on that.
-
----
-
-## Only template: `landa-agent`
-
-```json
-{ "template": "landa-agent", "label": "optional-job-name" }
-```
-
-| Field | Value |
-|-------|--------|
-| slug | `landa-agent` |
-| backend | firecracker |
-| tools | python3, bash, jq (offline) |
-| workspace | `/work`, `/work/in`, `/work/out` |
-| mem | ~256 MiB (image default) |
-
-Other templates: **coming soon** — do not request them.
-
----
-
-## HTTP API (complete)
-
-Base: `$LANDA_API_BASE`  
-Unless noted, all need Bearer key.
-
-| Method | Path | Body / query | Returns |
-|--------|------|--------------|---------|
-| GET | `/health` | — | `{ ok, backends, … }` (no auth) |
-| GET | `/v1/me` | — | project, user, concurrent limits |
-| GET | `/v1/templates` | — | list (only agent is usable) |
-| GET | `/v1/sandboxes` | — | non-destroyed VMs for this user |
-| POST | `/v1/sandboxes` | `{ template, label?, ttlSec? }` | `{ sandbox, vm? }` |
-| GET | `/v1/sandboxes/:id` | — | one sandbox |
-| POST | `/v1/sandboxes/:id/exec` | `{ cmd, cwd? }` | `{ result: { exitCode, stdout, stderr, durationMs } }` |
-| POST | `/v1/sandboxes/:id/snapshot` | — | world affordances JSON |
-| POST | `/v1/sandboxes/:id/files` | `{ path, content }` | write file |
-| GET | `/v1/sandboxes/:id/files` | `path`, `mode=read\|list` | file or listing |
-| DELETE | `/v1/sandboxes/:id` | — | destroy seat |
+Like E2B `with Sandbox() as s:` / `.kill()` — **cleanup is part of the skill**.
 
 Statuses: `creating` → `running` → `destroyed` | `error`.  
-Only call exec/files/snapshot when **`status === "running"`**.
+Only exec/files/snapshot when **`running`**.
 
 ---
 
-## Tool-shaped recipes (copy this pattern)
+## 3. Guest machine facts (max use of landa-agent)
 
-### 1. Create
+### Baked tools (use these)
 
-```bash
-curl -sS -X POST \
-  -H "Authorization: Bearer $LANDA_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"template":"landa-agent","label":"agent-job-1"}' \
-  "$LANDA_API_BASE/v1/sandboxes"
+| Tool | Use for |
+|------|---------|
+| `python3` | Data transforms, parsing, algorithms, JSON, pure stdlib |
+| `jq` | JSON filter/map/reduce pipelines |
+| `bash` + coreutils | Globs, pipelines, control flow |
+| `find` / `grep` / `sed` | Search and edit text |
+| busybox | Lightweight Unix utilities |
+
+Python is **stdlib only** — no numpy/pandas unless we bake a new image later.
+
+### Layout (contract)
+
+```
+/work/in/       ← put inputs here (JSON, CSV, text, scripts)
+/work/out/      ← put artifacts here (prefer result.json)
+/work/task.py   ← optional main entry
+/work/task.sh   ← optional shell entry
 ```
 
-Save `sandbox.id` (UUID).
+Dirs are created on seat boot. Prefer absolute paths.
 
-### 2. Exec
+### Offline rules
 
-```bash
-SID="<sandbox-uuid>"
-curl -sS -X POST \
-  -H "Authorization: Bearer $LANDA_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"cmd":"set -euo pipefail; uname -a; python3 --version; which jq"}' \
-  "$LANDA_API_BASE/v1/sandboxes/$SID/exec"
+**Do**
+
+- Pure Python stdlib (`json`, `re`, `pathlib`, `hashlib`, `csv`, `statistics`, …)
+- `jq` transforms on files in `/work`
+- Multi-file pipelines under `/work`
+- Deterministic functions: same inputs → same `data`
+
+**Do not**
+
+- `pip install`, `apk add`, `curl http://…`, `wget`, git clone public net
+- Assume package managers or compilers beyond what’s listed
+- Expect GPU, browser, or Node (coming later as templates)
+
+If a job needs network packages, **refuse or redesign** for stdlib — don’t thrash.
+
+---
+
+## 4. API reference (complete)
+
+| Method | Path | Body / query | Purpose |
+|--------|------|--------------|---------|
+| GET | `/health` | — | liveness (no auth) |
+| GET | `/v1/me` | — | project, limits, backends |
+| GET | `/v1/templates` | — | only `landa-agent` usable |
+| GET | `/v1/sandboxes` | — | list non-destroyed VMs |
+| POST | `/v1/sandboxes` | `{ "template":"landa-agent", "label"?, "ttlSec"? }` | create |
+| GET | `/v1/sandboxes/:id` | — | get one |
+| POST | `/v1/sandboxes/:id/exec` | `{ "cmd", "cwd"? }` | shell |
+| POST | `/v1/sandboxes/:id/snapshot` | — | world / affordances JSON |
+| POST | `/v1/sandboxes/:id/files` | `{ "path", "content" }` | write file |
+| GET | `/v1/sandboxes/:id/files` | `path`, `mode=read\|list` | read / list |
+| DELETE | `/v1/sandboxes/:id` | — | destroy |
+
+### Create response (important fields)
+
+```json
+{
+  "sandbox": {
+    "id": "uuid",
+    "status": "running",
+    "backend": "firecracker",
+    "label": "…",
+    "metadata": { "computerId": "fc_…", "createMs": "…" }
+  },
+  "vm": { "id": "…", "user_id": "…", "sandbox_id": "…" }
+}
 ```
 
-Prefer `set -euo pipefail` in multi-step shell. Check `result.exitCode`.
+### Exec response
 
-### 3. Files
+```json
+{
+  "result": {
+    "exitCode": 0,
+    "stdout": "…",
+    "stderr": "…",
+    "durationMs": 42
+  }
+}
+```
+
+---
+
+## 5. High-value playbooks
+
+### A. Code interpreter (most common E2B use)
+
+1. Create `landa-agent`
+2. Write `/work/in/input.json` + `/work/task.py`
+3. `python3 /work/task.py`
+4. Read `/work/out/result.json`
+5. Destroy
 
 ```bash
-# write
-curl -sS -X POST \
-  -H "Authorization: Bearer $LANDA_API_KEY" \
+SID=$(curl -sS -X POST -H "Authorization: Bearer $LANDA_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"path":"/work/in/task.py","content":"print(40+2)\n"}' \
+  -d '{"template":"landa-agent","label":"interp"}' \
+  "$LANDA_API_BASE/v1/sandboxes" | jq -r .sandbox.id)
+
+curl -sS -X POST -H "Authorization: Bearer $LANDA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"/work/task.py","content":"import json,sys\nfrom pathlib import Path\nPath(\"/work/out\").mkdir(exist_ok=True)\nPath(\"/work/out/result.json\").write_text(json.dumps({\"ok\":True,\"summary\":\"2+2\",\"data\":{\"n\":2+2}})+\"\\n\")\n"}' \
   "$LANDA_API_BASE/v1/sandboxes/$SID/files"
 
-# run
-curl -sS -X POST \
-  -H "Authorization: Bearer $LANDA_API_KEY" \
+curl -sS -X POST -H "Authorization: Bearer $LANDA_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"cmd":"python3 /work/in/task.py > /work/out/result.txt && cat /work/out/result.txt"}' \
+  -d '{"cmd":"python3 /work/task.py && cat /work/out/result.json"}' \
   "$LANDA_API_BASE/v1/sandboxes/$SID/exec"
 
-# read
-curl -sS \
-  -H "Authorization: Bearer $LANDA_API_KEY" \
-  "$LANDA_API_BASE/v1/sandboxes/$SID/files?path=/work/out/result.txt&mode=read"
-```
-
-### 4. Snapshot (optional)
-
-```bash
-curl -sS -X POST \
-  -H "Authorization: Bearer $LANDA_API_KEY" \
-  "$LANDA_API_BASE/v1/sandboxes/$SID/snapshot"
-```
-
-### 5. Destroy (required)
-
-```bash
-curl -sS -X DELETE \
-  -H "Authorization: Bearer $LANDA_API_KEY" \
+curl -sS -X DELETE -H "Authorization: Bearer $LANDA_API_KEY" \
   "$LANDA_API_BASE/v1/sandboxes/$SID"
 ```
 
+### B. jq data pipeline
+
+Write JSON to `/work/in/data.json`, then:
+
+```bash
+cmd='jq "[.[] | select(.score > 10)] | length" /work/in/data.json > /work/out/count.txt && cat /work/out/count.txt'
+```
+
+### C. Multi-step shell job (set -euo pipefail)
+
+```bash
+cmd='set -euo pipefail
+cd /work
+python3 -c "open(\"in/a.txt\",\"w\").write(\"hello\")"
+grep -n hello in/a.txt | tee out/hits.txt
+'
+```
+
+Always use `set -euo pipefail` for multi-line scripts so failures surface as non-zero `exitCode`.
+
+### D. Parallel hypotheses (HN “try 10 things”)
+
+```
+for each hypothesis i:
+  create seat label=hyp-i
+  write different task.py
+  exec
+  collect result.json
+  destroy
+compare summaries; pick best
+```
+
+Watch concurrent limit from `/v1/me` → `project.maxConcurrent` / `vms`.
+
+### E. Recover quota (429)
+
+```
+GET /v1/sandboxes
+DELETE any idle/error/unneeded ids
+retry create
+```
+
+### F. Smoke the image
+
+```bash
+cmd='python3 --version && jq --version && ls -la /work && python3 /work/task.py && cat /work/out/result.json'
+```
+
+Default image ships a smoke `task.py`.
+
 ---
 
-## TypeScript client (E2B-style loop)
+## 6. Result JSON contract (preferred)
+
+Orchestrators should teach the guest to emit:
+
+```json
+{
+  "ok": true,
+  "summary": "one-line human summary",
+  "data": {}
+}
+```
+
+On failure:
+
+```json
+{
+  "ok": false,
+  "summary": "what failed",
+  "data": { "error": "…" }
+}
+```
+
+Still check shell `exitCode` — JSON may be missing if the process crashed.
+
+---
+
+## 7. TypeScript harness (E2B-style `with`)
 
 ```ts
 const base = process.env.LANDA_API_BASE ?? "http://landa.tharavad.xyz";
 const key = process.env.LANDA_API_KEY;
-if (!key) throw new Error("LANDA_API_KEY is required");
+if (!key) throw new Error("LANDA_API_KEY required");
 
 async function landa<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${base}${path}`, {
@@ -203,20 +319,19 @@ async function landa<T>(path: string, init: RequestInit = {}): Promise<T> {
       Authorization: `Bearer ${key}`,
       Accept: "application/json",
       ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...(init.headers as Record<string, string> | undefined),
+      ...(init.headers as HeadersInit),
     },
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
-    const msg =
-      data?.message || data?.error || res.statusText || String(res.status);
-    throw new Error(`landa ${res.status}: ${msg}`);
+    throw new Error(
+      `landa ${res.status}: ${data?.message || data?.error || text || res.statusText}`,
+    );
   }
   return data as T;
 }
 
-/** Create → work → always destroy (like E2B with-block). */
 async function withVm<T>(
   label: string,
   fn: (id: string) => Promise<T>,
@@ -231,7 +346,7 @@ async function withVm<T>(
   const id = sandbox.id;
   try {
     if (sandbox.status !== "running") {
-      throw new Error(`sandbox not running: ${sandbox.status}`);
+      throw new Error(`not running: ${sandbox.status}`);
     }
     return await fn(id);
   } finally {
@@ -239,111 +354,163 @@ async function withVm<T>(
   }
 }
 
-// example
-const out = await withVm("demo", async (id) => {
+async function exec(id: string, cmd: string) {
   const { result } = await landa<{
-    result: { exitCode: number; stdout: string; stderr: string };
+    result: {
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      durationMs: number;
+    };
   }>(`/v1/sandboxes/${id}/exec`, {
     method: "POST",
-    body: JSON.stringify({ cmd: "python3 -c 'print(2+2)'" }),
+    body: JSON.stringify({ cmd }),
   });
-  return result.stdout.trim();
-});
+  return result;
+}
+
+async function writeFile(id: string, path: string, content: string) {
+  await landa(`/v1/sandboxes/${id}/files`, {
+    method: "POST",
+    body: JSON.stringify({ path, content }),
+  });
+}
+
+async function readFile(id: string, path: string) {
+  const r = await landa<{ file: { path: string; content: string } }>(
+    `/v1/sandboxes/${id}/files?path=${encodeURIComponent(path)}&mode=read`,
+  );
+  return r.file.content;
+}
 ```
 
 ---
 
-## Python (same pattern)
+## 8. Python harness
 
 ```python
-import os, json, urllib.request
+import json, os, urllib.request
 
 BASE = os.environ.get("LANDA_API_BASE", "http://landa.tharavad.xyz")
 KEY = os.environ["LANDA_API_KEY"]
 
 def landa(method, path, body=None):
+    data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(
-        f"{BASE}{path}",
-        data=None if body is None else json.dumps(body).encode(),
+        f"{BASE}{path}", data=data, method=method,
         headers={
             "Authorization": f"Bearer {KEY}",
-            "Content-Type": "application/json",
             "Accept": "application/json",
+            **({"Content-Type": "application/json"} if data else {}),
         },
-        method=method,
     )
     with urllib.request.urlopen(req) as r:
         return json.load(r)
 
-sid = None
-try:
-    created = landa("POST", "/v1/sandboxes", {
-        "template": "landa-agent",
-        "label": "py-job",
-    })
-    sid = created["sandbox"]["id"]
-    ex = landa("POST", f"/v1/sandboxes/{sid}/exec", {
-        "cmd": "python3 -c 'print(\"ok\")'",
-    })
-    print(ex["result"])
-finally:
-    if sid:
+class Vm:
+    def __enter__(self):
+        r = landa("POST", "/v1/sandboxes", {
+            "template": "landa-agent", "label": "py",
+        })
+        self.id = r["sandbox"]["id"]
+        if r["sandbox"]["status"] != "running":
+            raise RuntimeError(r["sandbox"]["status"])
+        return self
+    def __exit__(self, *exc):
         try:
-            landa("DELETE", f"/v1/sandboxes/{sid}")
+            landa("DELETE", f"/v1/sandboxes/{self.id}")
         except Exception:
             pass
+    def exec(self, cmd: str):
+        return landa("POST", f"/v1/sandboxes/{self.id}/exec", {"cmd": cmd})["result"]
+    def write(self, path: str, content: str):
+        landa("POST", f"/v1/sandboxes/{self.id}/files", {"path": path, "content": content})
+
+with Vm() as vm:
+    print(vm.exec("python3 -c 'print(40+2)'"))
 ```
 
 ---
 
-## Limits & errors
+## 9. Errors & limits
 
-| Limit | Default / notes |
-|-------|-----------------|
-| Concurrent VMs | per project (often 10) |
-| Session TTL | 8h unless `ttlSec` lower |
-| Template | only `landa-agent` |
-
-| HTTP | Meaning | Agent action |
-|------|---------|--------------|
-| 401 | bad/missing key | stop; ask user for key |
-| 429 | concurrent limit | list VMs, destroy idle, retry |
-| 400 | bad template/body | use only `landa-agent` |
-| 409 | not running / no seat | recreate or wait |
-| 501 | backend down | report host/backend unavailable |
+| HTTP | Meaning | What you do |
+|------|---------|-------------|
+| 401 | bad/missing key | stop; user must create key in console |
+| 429 | concurrent limit | list + destroy idle VMs; retry |
+| 400 `template_unavailable` | wrong template | only `landa-agent` |
+| 409 | not running / no seat | recreate or fix status |
+| 501 | Firecracker/backend down | report host issue |
 | 404 | unknown id | refresh list |
 
----
-
-## Security rules (non-negotiable)
-
-1. **Never** print, commit, or paste full API keys into chat logs if avoidable  
-2. Prefer env `LANDA_API_KEY` over hardcoding  
-3. **Destroy** every seat you create  
-4. Treat `/work` as ephemeral — nothing persists after destroy  
-5. Do not open network-dependent installs unless the seat has egress and the user asked  
+| Limit | Notes |
+|-------|--------|
+| Concurrent | `/v1/me` → `project.maxConcurrent` / `vms.active` |
+| TTL | 8h default; optional `ttlSec` on create (capped) |
+| Memory | ~256 MiB guest — keep workloads small |
 
 ---
 
-## Agent checklist
+## 10. Security (industry + landa)
 
-- [ ] `LANDA_API_KEY` set  
-- [ ] Create with `template: "landa-agent"` only  
-- [ ] Use `/work/in` + `/work/out` for artifacts  
-- [ ] Check `exitCode` on every exec  
-- [ ] `DELETE` sandbox in a `finally` / cleanup path  
-- [ ] On 429, destroy unused VMs before retrying  
+From HN “harness outside sandbox” + multi-tenant practice:
+
+1. **Orchestrator holds secrets** — never write `LANDA_API_KEY` or user API keys into guest files  
+2. **Untrusted code only inside the VM** — don’t `eval` host-side  
+3. **Destroy always** — in `finally` / `__exit__`  
+4. **No key in logs** — redact Bearer tokens  
+5. **Ephemeral disk** — nothing survives DELETE  
+6. **Offline guest** reduces blast radius of bad code  
 
 ---
 
-## Console map (for humans)
+## 11. Capability map (what to attempt)
 
-| UI | Purpose |
-|----|---------|
-| Overview / VMs | list & create seats |
+| Goal | How on landa-agent |
+|------|---------------------|
+| Run generated Python | write `/work/task.py` → exec |
+| Transform JSON | `jq` or python `json` |
+| Parse / regex logs | python `re` or `grep`/`sed` |
+| Hash / checksum | python `hashlib` |
+| CSV stats | python `csv` + `statistics` |
+| Unit-test a pure function | write tests + script, assert exit 0 |
+| Compare N algorithms | N parallel VMs or sequential recreate |
+| Long REPL session | multiple execs on **same** id until done, then destroy |
+| Install packages | **not supported** — redesign or wait for richer image |
+| Browse the web | **not supported** — coming soon template |
+| Node/npm | **not supported** — coming soon |
+
+---
+
+## 12. Agent checklist (run every job)
+
+- [ ] `LANDA_API_KEY` present  
+- [ ] Create with **`template: "landa-agent"`** only  
+- [ ] Label seats with task id for debugging  
+- [ ] Put inputs in `/work/in`, outputs in `/work/out`  
+- [ ] Prefer `result.json` contract  
+- [ ] Check `exitCode` **and** parse stdout/files  
+- [ ] On multi-line shell: `set -euo pipefail`  
+- [ ] `DELETE` in all exit paths  
+- [ ] On 429: reap own idle VMs first  
+- [ ] Never invent template slugs  
+
+---
+
+## 13. Console map (humans)
+
+| Tab | For |
+|-----|-----|
+| VMs | create / open / destroy seats |
 | API keys | mint Bearer secrets for agents |
-| Guide | human-readable recipes |
-| Templates | `landa-agent` live; others **Coming soon** |
+| Guide | human recipes |
+| Templates | `landa-agent` live · others **Coming soon** |
+| Settings | account / project |
 
-Skill file path in repo: **`docs/SKILL.md`** (this file).  
-Point coding assistants at this skill + a fresh key from the console.
+---
+
+## 14. One-liner philosophy
+
+> **Harness thinks. VM does. Files go in `/work`. Results come out as JSON. Then the machine dies.**
+
+That is how E2B-class sandboxes are used in production agent stacks — and how landa is meant to be used to the fullest **today**.
