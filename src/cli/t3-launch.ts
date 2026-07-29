@@ -1,8 +1,15 @@
 /**
  * Launch bundled T3 from monorepo `t3/`.
  *
- * Cloud workspaces: pre-register project via `t3 project add <mirror>`, then
- * `t3 start --base-dir <per-session-t3-home> <mirror>` so the UI has a project.
+ * Local GUI needs BOTH:
+ *   - server (API/WS)  ~:13773 or :3773
+ *   - web (Vite)       ~:5733
+ *
+ * `t3 start` alone in a monorepo checkout has no staticDir / no devUrl →
+ * browser shows: "No static directory configured and no dev URL set."
+ *
+ * Fix: for start mode use `pnpm dev` (server + web). Pre-register the
+ * cloud mirror with `t3 project add --base-dir <T3CODE_HOME>`.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, constants, mkdir, writeFile } from "node:fs/promises";
@@ -20,7 +27,6 @@ export function bundledT3Root(repoRoot = landaRepoRoot()): string {
   return process.env.LANDA_T3_ROOT?.trim() || join(repoRoot, "t3");
 }
 
-/** Isolated T3 sqlite/state per landa session (or "default"). */
 export function t3HomeForSession(sessionId?: string): string {
   const id = sessionId || "default";
   return join(homedir(), ".cache", "landa", "t3-home", id);
@@ -91,7 +97,6 @@ function runForeground(
   });
 }
 
-/** t3 CLI via pnpm --filter t3 exec */
 async function t3Cli(
   pnpm: string,
   t3Root: string,
@@ -105,7 +110,6 @@ async function t3Cli(
   );
 }
 
-/** Ensure mirror looks like a real project so agents/T3 are happy. */
 async function seedMirrorProject(mirror: string, title: string): Promise<void> {
   await mkdir(mirror, { recursive: true });
   const pkg = join(mirror, "package.json");
@@ -114,7 +118,9 @@ async function seedMirrorProject(mirror: string, title: string): Promise<void> {
       pkg,
       JSON.stringify(
         {
-          name: title.replace(/[^a-zA-Z0-9._-]+/g, "-").toLowerCase() || "landa-workspace",
+          name:
+            title.replace(/[^a-zA-Z0-9._-]+/g, "-").toLowerCase() ||
+            "landa-workspace",
           private: true,
           description: "landa cloud workspace mirror",
         },
@@ -141,7 +147,9 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
   const nodeV = process.version;
 
   if (!nodeEngineOk(nodeV)) {
-    console.error(`Node ${nodeV} is below T3's floor (need >=24.10 or 22.16+/23.11+).`);
+    console.error(
+      `Node ${nodeV} is below T3's floor (need >=24.10 or 22.16+/23.11+).`,
+    );
     console.error("  brew upgrade node   # or nvm install 24.13");
   }
 
@@ -164,7 +172,7 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
     console.log(`→ pnpm install in ${t3Root}…`);
     await runForeground(pnpm, ["install"], { env, cwd: t3Root });
     if (!(await t3DepsReady(t3Root))) {
-      throw new Error("pnpm install incomplete — re-run after fixing errors");
+      throw new Error("pnpm install incomplete");
     }
   }
 
@@ -172,8 +180,6 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
   const mirror = opts.workspaceCwd;
   const t3Home = t3HomeForSession(opts.sessionId);
   await mkdir(t3Home, { recursive: true });
-
-  // Per-session T3 state so projects don't collide with ~/Documents/landa
   env.T3CODE_HOME = t3Home;
 
   if (mirror) {
@@ -181,8 +187,7 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
       ? `landa:${opts.sessionName}`
       : `landa:${opts.sessionId?.slice(0, 8) ?? "workspace"}`;
     await seedMirrorProject(mirror, title);
-
-    console.log(`→ register T3 project at mirror`);
+    console.log("→ register T3 project");
     console.log(`  workspace: ${mirror}`);
     console.log(`  t3 home:   ${t3Home}`);
     try {
@@ -196,21 +201,25 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
         t3Home,
       ]);
     } catch (e) {
-      // already exists is fine
       const msg = e instanceof Error ? e.message : String(e);
       if (!/already exists|Added project/i.test(msg)) {
-        console.warn("  project add:", msg);
+        console.warn("  project add:", msg.slice(0, 200));
+      } else {
+        console.log("  (project already registered)");
       }
     }
   }
 
-  console.log(`→ bundled T3 (${mode})`);
+  console.log("");
+  console.log(`→ bundled T3 (${mode}) from ${t3Root}`);
   console.log(`  LANDA_API_BASE=${opts.base}`);
-  if (mirror) console.log(`  project cwd=${mirror}`);
   console.log("");
 
+  // ── headless: API only (desktop/mobile pair) ─────────────────────
   if (mode === "serve") {
-    console.log("  headless — use pairing URL on the API port (not :5733 unless Vite runs)");
+    console.log("  headless serve — pair with T3 desktop/app using printed URL");
+    console.log("  (no local Vite; do not expect :5733)");
+    console.log("");
     await t3Cli(pnpm, t3Root, env, [
       "serve",
       "--base-dir",
@@ -222,35 +231,31 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
     return;
   }
 
-  // start: server + open browser; project already registered
-  console.log("  open the pairing / app URL T3 prints");
-  console.log("  (dev UI may be :5733; server often :3773 or :13773)");
+  // ── local GUI: MUST run server + Vite ────────────────────────────
+  // Bare `t3 start` without a built web bundle → "No static directory
+  // configured and no dev URL set" on http://localhost:3773/pair
+  console.log("  starting full stack (pnpm dev):");
+  console.log("    server  http://127.0.0.1:13773  API / WebSocket");
+  console.log("    web     http://127.0.0.1:5733   ← open THIS in the browser");
+  console.log("");
+  console.log("  When you see a pairing line, use the :5733 URL, e.g.");
+  console.log("    http://localhost:5733/pair#token=…");
+  console.log("  Do NOT use :3773 alone — that has no UI in monorepo dev.");
+  console.log("");
+  console.log("  Ctrl+C stops T3 (landa cloud session stays).");
   console.log("");
 
-  try {
-    await t3Cli(pnpm, t3Root, env, [
-      "start",
-      "--base-dir",
-      t3Home,
-      "--auto-bootstrap-project-from-cwd",
-      ...(mirror ? [mirror] : []),
-    ]);
-    return;
-  } catch (e) {
-    console.warn("t3 start exited; falling back to pnpm dev for full UI…");
-    console.warn(String(e instanceof Error ? e.message : e));
-  }
-
-  // Full Vite UI — still use isolated T3CODE_HOME
-  console.log("  full stack pnpm dev → web :5733 + server :13773");
-  console.log("  open http://localhost:5733/pair#token=… when shown");
-  console.log("");
   await runForeground(pnpm, ["dev"], {
     env: {
       ...env,
       T3CODE_HOME: t3Home,
-      T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: mirror ? "1" : "0",
-      ...(mirror ? { T3CODE_BOOTSTRAP_CWD: mirror } : {}),
+      // dev-runner may set ports; keep landa context
+      ...(mirror
+        ? {
+            T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "1",
+            // server cwd for bootstrap is still monorepo; project already added
+          }
+        : {}),
     },
     cwd: t3Root,
   });
