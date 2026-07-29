@@ -8,9 +8,10 @@ const port = Number(process.env.LANDA_API_PORT ?? 8787);
 const hostname = process.env.LANDA_API_HOST ?? "127.0.0.1";
 
 const plane = await createPlane({
-  docker: process.env.LANDA_DOCKER === "0" ? false : "auto",
+  firecracker:
+    process.env.LANDA_FIRECRACKER === "0" ? false : "auto",
   defaultBackend:
-    process.env.LANDA_BACKEND === "docker" ? "docker" : "memory",
+    process.env.LANDA_BACKEND === "firecracker" ? "firecracker" : "memory",
 });
 
 const app = createApp(plane);

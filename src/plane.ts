@@ -4,37 +4,61 @@
 import { ControlPlane } from "./control-plane.js";
 import { BackendRegistry } from "./backends/registry.js";
 import { MemoryBackend } from "./backends/memory.js";
-import { DockerBackend, dockerAvailable } from "./backends/docker.js";
+import {
+  FirecrackerBackend,
+  firecrackerAvailable,
+} from "./backends/firecracker.js";
 
 export type PlaneOptions = {
-  /** force-include docker even if probe fails */
-  docker?: boolean | "auto";
-  /** default image for docker seats */
-  dockerImage?: string;
-  /** default backend name when spec.backend omitted */
-  defaultBackend?: "memory" | "docker";
+  /** force-include firecracker even if probe fails */
+  firecracker?: boolean | "auto";
+  /** default backend when spec.backend omitted */
+  defaultBackend?: "memory" | "firecracker";
+  firecrackerOpts?: ConstructorParameters<typeof FirecrackerBackend>[0];
 };
 
-export async function createPlane(opts: PlaneOptions = {}): Promise<ControlPlane> {
+export async function createPlane(
+  opts: PlaneOptions = {},
+): Promise<ControlPlane> {
   const registry = new BackendRegistry();
-  const memory = new MemoryBackend();
-  registry.register(memory, { default: opts.defaultBackend !== "docker" });
+  const wantFcDefault =
+    opts.defaultBackend === "firecracker" ||
+    process.env.LANDA_BACKEND === "firecracker";
 
-  const wantDocker =
-    opts.docker === true ||
-    opts.docker === "auto" ||
-    opts.defaultBackend === "docker" ||
-    process.env.LANDA_DOCKER === "1" ||
-    process.env.LANDA_BACKEND === "docker";
+  registry.register(new MemoryBackend(), { default: !wantFcDefault });
 
-  if (wantDocker) {
-    const ok = opts.docker === true ? true : await dockerAvailable();
+  const wantFc =
+    opts.firecracker === true ||
+    opts.firecracker === "auto" ||
+    wantFcDefault ||
+    process.env.LANDA_FIRECRACKER === "1" ||
+    process.env.LANDA_FIRECRACKER === "auto";
+
+  if (wantFc) {
+    const ok =
+      opts.firecracker === true ? true : await firecrackerAvailable();
     if (ok) {
-      registry.register(new DockerBackend({ image: opts.dockerImage }), {
-        default: opts.defaultBackend === "docker",
-      });
-    } else if (opts.docker === true || opts.defaultBackend === "docker") {
-      console.warn("[landa] docker requested but docker is not available");
+      // resolve firecracker binary if only on PATH from nix develop
+      let bin = process.env.FIRECRACKER_BIN;
+      if (!bin) {
+        try {
+          const { execSync } = await import("node:child_process");
+          bin = execSync("command -v firecracker", { encoding: "utf8" }).trim();
+        } catch {
+          bin = "firecracker";
+        }
+      }
+      registry.register(
+        new FirecrackerBackend({
+          ...opts.firecrackerOpts,
+          firecrackerBin: bin,
+        }),
+        { default: wantFcDefault },
+      );
+    } else if (opts.firecracker === true || wantFcDefault) {
+      console.warn(
+        "[landa] firecracker requested but /dev/kvm or binary missing",
+      );
     }
   }
 

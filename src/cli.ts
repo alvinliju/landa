@@ -6,8 +6,8 @@ function usage(): never {
   console.log(`landa — computers for agents
 
 usage:
-  landa demo [memory|docker]   full contract walk (create/exec/fs/snapshot/destroy)
-  landa create [--backend m|d] [name]
+  landa demo [memory|firecracker]   full contract walk
+  landa create [--backend m|fc] [name]
   landa list
   landa get <id>
   landa exec <id> -- <cmd...>
@@ -19,30 +19,32 @@ usage:
   landa help
 
 env:
-  LANDA_BACKEND=memory|docker
-  LANDA_DOCKER=1                 enable docker in plane
-  LANDA_DOCKER_IMAGE=alpine:3.20
+  LANDA_BACKEND=memory|firecracker
+  LANDA_FIRECRACKER=1|auto
+  FIRECRACKER_BIN=...
+  LANDA_FC_ASSETS=firecracker/assets
 `);
   process.exit(0);
 }
 
-async function demo(backend: "memory" | "docker" | "auto") {
+async function demo(backend: "memory" | "firecracker" | "auto") {
   const plane =
     backend === "memory"
       ? createMemoryPlane()
       : await createPlane({
-          docker: backend === "docker" ? true : "auto",
-          defaultBackend: backend === "docker" ? "docker" : "memory",
+          firecracker: backend === "firecracker" ? true : "auto",
+          defaultBackend:
+            backend === "firecracker" ? "firecracker" : "memory",
         });
 
   console.log(`backends: ${plane.backends().join(", ")}`);
   const use =
-    backend === "docker"
-      ? "docker"
+    backend === "firecracker"
+      ? "firecracker"
       : backend === "memory"
         ? "memory"
-        : plane.backends().includes("docker")
-          ? "docker"
+        : plane.backends().includes("firecracker")
+          ? "firecracker"
           : "memory";
 
   console.log(`\n→ create (${use})`);
@@ -75,22 +77,24 @@ async function demo(backend: "memory" | "docker" | "auto") {
 }
 
 function parseBackendFlag(argv: string[]): {
-  backend?: "memory" | "docker";
+  backend?: "memory" | "firecracker";
   rest: string[];
 } {
   const rest: string[] = [];
-  let backend: "memory" | "docker" | undefined;
+  let backend: "memory" | "firecracker" | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--backend" || a === "-b") {
       const v = argv[++i];
       if (v === "m" || v === "memory") backend = "memory";
-      else if (v === "d" || v === "docker") backend = "docker";
+      else if (v === "fc" || v === "firecracker" || v === "f")
+        backend = "firecracker";
       else throw new Error(`unknown backend: ${v}`);
     } else if (a.startsWith("--backend=")) {
       const v = a.slice("--backend=".length);
       if (v === "m" || v === "memory") backend = "memory";
-      else if (v === "d" || v === "docker") backend = "docker";
+      else if (v === "fc" || v === "firecracker" || v === "f")
+        backend = "firecracker";
       else throw new Error(`unknown backend: ${v}`);
     } else {
       rest.push(a);
@@ -105,15 +109,18 @@ async function main() {
   if (!cmd || cmd === "help" || cmd === "-h" || cmd === "--help") usage();
 
   if (cmd === "demo") {
-    const which = (raw[0] as "memory" | "docker" | undefined) ?? "auto";
-    await demo(which === "memory" || which === "docker" ? which : "auto");
+    const which =
+      (raw[0] as "memory" | "firecracker" | undefined) ?? "auto";
+    await demo(
+      which === "memory" || which === "firecracker" ? which : "auto",
+    );
     return;
   }
 
   const plane = await createPlane({
-    docker: "auto",
+    firecracker: "auto",
     defaultBackend:
-      process.env.LANDA_BACKEND === "docker" ? "docker" : "memory",
+      process.env.LANDA_BACKEND === "firecracker" ? "firecracker" : "memory",
   });
 
   if (cmd === "backends") {
@@ -125,7 +132,9 @@ async function main() {
     const { backend, rest } = parseBackendFlag(raw);
     const info = await plane.create({
       name: rest[0] ?? "seat",
-      backend: backend ?? (process.env.LANDA_BACKEND as "memory" | "docker" | undefined),
+      backend:
+        backend ??
+        (process.env.LANDA_BACKEND as "memory" | "firecracker" | undefined),
     });
     console.log(JSON.stringify(info, null, 2));
     return;
@@ -147,17 +156,26 @@ async function main() {
     const id = raw[0];
     const dash = raw.indexOf("--");
     const cmdParts = dash >= 0 ? raw.slice(dash + 1) : raw.slice(1);
-    if (!id || !cmdParts.length) throw new Error("usage: landa exec <id> -- <cmd>");
+    if (!id || !cmdParts.length)
+      throw new Error("usage: landa exec <id> -- <cmd>");
     console.log(
-      JSON.stringify(await plane.exec(id, { cmd: cmdParts.join(" ") }), null, 2),
+      JSON.stringify(
+        await plane.exec(id, { cmd: cmdParts.join(" ") }),
+        null,
+        2,
+      ),
     );
     return;
   }
 
   if (cmd === "write") {
     const [id, path, ...contentParts] = raw;
-    if (!id || !path) throw new Error("usage: landa write <id> <path> <content>");
-    await plane.writeFile(id, { path, content: contentParts.join(" ") + "\n" });
+    if (!id || !path)
+      throw new Error("usage: landa write <id> <path> <content>");
+    await plane.writeFile(id, {
+      path,
+      content: contentParts.join(" ") + "\n",
+    });
     console.log("ok");
     return;
   }

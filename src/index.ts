@@ -14,6 +14,8 @@ export {
   MemoryBackend,
   DockerBackend,
   dockerAvailable,
+  FirecrackerBackend,
+  firecrackerAvailable,
   BackendRegistry,
   BACKEND_CAPABILITIES,
 } from "./backends/index.js";

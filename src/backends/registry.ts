@@ -69,11 +69,11 @@ export const BACKEND_CAPABILITIES: Record<string, BackendCapabilities> = {
   firecracker: {
     name: "firecracker",
     isolation: "microvm",
-    exec: false,
-    files: false,
+    exec: true,
+    files: true,
     pause: false,
-    checkpoint: true,
-    notes: "spike only — not wired to create yet",
+    checkpoint: false,
+    notes: "KVM microVM + SSH exec (run API as root on seat host)",
   },
 };
 

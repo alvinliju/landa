@@ -146,13 +146,21 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const backendName = tmpl.backend as BackendName;
 
     // seat backends we can actually spawn
-    if (backendName === "memory" || backendName === "docker") {
+    if (
+      backendName === "memory" ||
+      backendName === "firecracker" ||
+      backendName === "docker"
+    ) {
       if (!plane.backends().includes(backendName)) {
         return c.json(
           {
             error: "backend_unavailable",
             backend: backendName,
             available: plane.backends(),
+            hint:
+              backendName === "firecracker"
+                ? "run landa-api as root on a KVM host with assets (scripts/fetch-landa-assets.sh)"
+                : undefined,
           },
           501,
         );
@@ -164,7 +172,11 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
           name: label || templateSlug,
           template: templateSlug,
           backend: backendName,
-          image: cfg.image,
+          image: typeof cfg.image === "string" ? cfg.image : undefined,
+          memoryMiB:
+            typeof (cfg as { memMiB?: number }).memMiB === "number"
+              ? (cfg as { memMiB: number }).memMiB
+              : undefined,
         });
         hostMeta = {
           computerId: info.id,

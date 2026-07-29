@@ -39,14 +39,29 @@ WHERE
     SELECT 1 FROM templates WHERE slug = 'firecracker-hello' AND project_id IS NULL
   );
 
+-- landa-lite: same FC path; swap kernel/rootfs paths in config to change image
+INSERT INTO templates (id, project_id, slug, name, backend, config)
+SELECT
+  '00000000-0000-4000-8000-000000000013'::uuid,
+  NULL,
+  'landa-lite',
+  'Landa lite Firecracker seat',
+  'firecracker',
+  '{"kernel": "assets/hello-vmlinux.bin", "rootfs": "assets/hello-rootfs.ext4", "memMiB": 256, "note": "lightweight FC seat — swap rootfs path to change image"}'::jsonb
+WHERE
+  NOT EXISTS (
+    SELECT 1 FROM templates WHERE slug = 'landa-lite' AND project_id IS NULL
+  );
+
+-- docker demoted (optional; not registered by default)
 INSERT INTO templates (id, project_id, slug, name, backend, config)
 SELECT
   '00000000-0000-4000-8000-000000000012'::uuid,
   NULL,
   'docker-alpine',
-  'Docker Alpine seat',
+  'Docker Alpine seat (legacy)',
   'docker',
-  '{"image": "alpine:3.20", "note": "real shell/fs via docker"}'::jsonb
+  '{"image": "alpine:3.20", "note": "legacy — prefer firecracker"}'::jsonb
 WHERE
   NOT EXISTS (
     SELECT 1 FROM templates WHERE slug = 'docker-alpine' AND project_id IS NULL
