@@ -10,71 +10,60 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  getApiBase,
-  getApiKey,
-  setApiBase,
-  setApiKey,
-} from "@/lib/api";
+import { api } from "@/lib/api";
 
 export function SettingsPage({ onSignOut }: { onSignOut: () => void }) {
-  const [base, setBase] = React.useState(
-    getApiBase() || "http://landa-back.tharavad.xyz",
-  );
-  const key = getApiKey();
+  const [me, setMe] = React.useState<Awaited<
+    ReturnType<typeof api.me>
+  > | null>(null);
 
-  function save() {
-    setApiBase(base.trim());
-    toast.success("saved");
-  }
+  React.useEffect(() => {
+    void api
+      .me()
+      .then(setMe)
+      .catch((e) => toast.error(String(e.message ?? e)));
+  }, []);
 
   return (
     <PageContainer className="flex flex-col gap-6 p-6">
       <PageHeader
         title="Settings"
-        description="API connection for this browser. Key stays in localStorage."
+        description="Account and free-tier project. Sign out ends your session."
       />
       <Card className="max-w-lg">
         <CardHeader>
-          <CardTitle>Connection</CardTitle>
+          <CardTitle>Account</CardTitle>
           <CardDescription>
-            Browser stores the API base and key for this console only.
+            Free access behind email/password (Better Auth).
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-2">
-            <Label>API base</Label>
-            <Input
-              className="font-mono text-xs"
-              value={base}
-              onChange={(e) => setBase(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label>API key</Label>
-            <Input
-              className="font-mono text-xs"
-              value={key ? `${key.slice(0, 16)}…` : "—"}
-              readOnly
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={save}>
-              Save base
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => {
-                setApiKey(null);
-                onSignOut();
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
+        <CardContent className="flex flex-col gap-3 font-mono text-xs">
+          {me?.user ? (
+            <>
+              <div>email · {me.user.email}</div>
+              <div>name · {me.user.name || "—"}</div>
+              <div>via · {me.via}</div>
+            </>
+          ) : (
+            <div className="text-muted-foreground">loading…</div>
+          )}
+          {me?.project ? (
+            <>
+              <div className="mt-2">project · {me.project.slug}</div>
+              <div>
+                limits · {me.project.maxConcurrent} concurrent ·{" "}
+                {Math.round(me.project.maxSessionSec / 3600)}h TTL
+              </div>
+            </>
+          ) : null}
+          <Button
+            size="sm"
+            variant="destructive"
+            className="mt-2 w-fit"
+            onClick={onSignOut}
+          >
+            Sign out
+          </Button>
         </CardContent>
       </Card>
     </PageContainer>

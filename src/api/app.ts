@@ -5,33 +5,35 @@ import { sql } from "../db.js";
 import { ControlPlane, landaErrorToHttp } from "../control-plane.js";
 import { createMemoryPlane } from "../plane.js";
 import type { BackendName } from "../types.js";
+import { auth } from "../better-auth.js";
 
 /**
  * control plane HTTP — E2B-shaped surfaces, our seats
- * auth: Authorization: Bearer landa_…  or  X-Api-Key: landa_…
- *
- * Pass a ControlPlane so docker/memory registration is shared with CLI.
+ * auth: Better Auth session cookie  OR  Bearer landa_… API key
  */
 export function createApp(plane: ControlPlane = createMemoryPlane()) {
   const app = new Hono<AppEnv>();
 
-  // browser console — landa.tharavad.xyz + local vite
+  // browser console — landa.tharavad.xyz + local vite (credentials for session cookies)
   app.use("*", async (c, next) => {
     const origin = c.req.header("Origin");
-    const open = process.env.LANDA_CORS_ORIGIN === "*";
     const allowed =
-      open ||
       !origin ||
       origin === "http://localhost:5173" ||
       origin === "http://127.0.0.1:5173" ||
       origin === "http://landa.tharavad.xyz" ||
       origin === "https://landa.tharavad.xyz" ||
-      origin.endsWith(".tharavad.xyz");
-    // reflect origin when allowed (required if browser sends credentials later)
-    c.header("Access-Control-Allow-Origin", allowed ? (origin ?? "*") : "null");
+      origin.endsWith(".tharavad.xyz") ||
+      process.env.LANDA_CORS_ORIGIN === "*";
+    if (allowed && origin) {
+      c.header("Access-Control-Allow-Origin", origin);
+      c.header("Access-Control-Allow-Credentials", "true");
+    } else if (allowed) {
+      c.header("Access-Control-Allow-Origin", "*");
+    }
     c.header(
       "Access-Control-Allow-Headers",
-      "Authorization, Content-Type, X-Api-Key",
+      "Authorization, Content-Type, X-Api-Key, Cookie",
     );
     c.header(
       "Access-Control-Allow-Methods",
@@ -44,6 +46,9 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     await next();
   });
 
+  // Better Auth — sign-up / sign-in / session (proxied as same-origin from UI)
+  app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
   app.get("/health", async (c) => {
     try {
       await sql()`SELECT 1`;
@@ -52,6 +57,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         service: "landa-api",
         db: true,
         backends: plane.backends(),
+        auth: "better-auth",
       });
     } catch (e) {
       return c.json(
@@ -62,14 +68,22 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
   });
 
   app.get("/v1/me", requireAuth, async (c) => {
-    const auth = c.get("auth");
+    const a = c.get("auth");
     return c.json({
       project: {
-        id: auth.projectId,
-        slug: auth.slug,
-        maxConcurrent: auth.maxConcurrent,
-        maxSessionSec: auth.maxSessionSec,
+        id: a.projectId,
+        slug: a.slug,
+        maxConcurrent: a.maxConcurrent,
+        maxSessionSec: a.maxSessionSec,
       },
+      user: a.userId
+        ? {
+            id: a.userId,
+            email: a.userEmail,
+            name: a.userName,
+          }
+        : null,
+      via: a.via,
       backends: plane.backends(),
     });
   });

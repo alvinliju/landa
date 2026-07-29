@@ -1,13 +1,18 @@
 import { createHash } from "node:crypto";
 import type { Context, Next } from "hono";
 import { sql } from "./db.js";
+import { auth, projectForUserId, provisionUserProject } from "./better-auth.js";
 
 export type AuthProject = {
   projectId: string;
   slug: string;
   maxConcurrent: number;
   maxSessionSec: number;
-  apiKeyId: string;
+  apiKeyId?: string;
+  userId?: string;
+  userEmail?: string;
+  userName?: string;
+  via: "api_key" | "session";
 };
 
 export function hashApiKey(plaintext: string): string {
@@ -21,7 +26,8 @@ export async function resolveApiKey(
   const raw = header.startsWith("Bearer ")
     ? header.slice(7).trim()
     : header.trim();
-  if (!raw) return null;
+  if (!raw || raw.startsWith("landa_session")) return null;
+  if (!raw.startsWith("landa_")) return null;
   const keyHash = hashApiKey(raw);
   const db = sql();
   const rows = await db<
@@ -56,7 +62,39 @@ export async function resolveApiKey(
     maxConcurrent: row.max_concurrent,
     maxSessionSec: row.max_session_sec,
     apiKeyId: row.api_key_id,
+    via: "api_key",
   };
+}
+
+export async function resolveSession(
+  headers: Headers,
+): Promise<AuthProject | null> {
+  try {
+    const session = await auth.api.getSession({ headers });
+    if (!session?.user) return null;
+    let project = await projectForUserId(session.user.id);
+    if (!project) {
+      await provisionUserProject(
+        session.user.id,
+        session.user.email,
+        session.user.name,
+      );
+      project = await projectForUserId(session.user.id);
+    }
+    if (!project) return null;
+    return {
+      projectId: project.projectId,
+      slug: project.slug,
+      maxConcurrent: project.maxConcurrent,
+      maxSessionSec: project.maxSessionSec,
+      userId: session.user.id,
+      userEmail: session.user.email,
+      userName: session.user.name,
+      via: "session",
+    };
+  } catch {
+    return null;
+  }
 }
 
 export type AppEnv = {
@@ -66,12 +104,19 @@ export type AppEnv = {
 };
 
 export async function requireAuth(c: Context<AppEnv>, next: Next) {
-  const auth = await resolveApiKey(
+  const viaKey = await resolveApiKey(
     c.req.header("authorization") ?? c.req.header("x-api-key"),
   );
-  if (!auth) {
-    return c.json({ error: "unauthorized" }, 401);
+  if (viaKey) {
+    c.set("auth", viaKey);
+    await next();
+    return;
   }
-  c.set("auth", auth);
-  await next();
+  const viaSession = await resolveSession(c.req.raw.headers);
+  if (viaSession) {
+    c.set("auth", viaSession);
+    await next();
+    return;
+  }
+  return c.json({ error: "unauthorized", hint: "sign in or pass API key" }, 401);
 }

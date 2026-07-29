@@ -10,15 +10,19 @@ import type {
 const STORAGE_KEY = "landa.apiKey";
 const BASE_KEY = "landa.apiBase";
 
-/** empty base → same-origin / vite proxy */
+/**
+ * empty = same origin (prod: landa.tharavad.xyz proxies /v1 + /api)
+ * or absolute landa-back for API-key scripts
+ */
 export function getApiBase(): string {
   if (typeof window === "undefined") return "";
   const stored = localStorage.getItem(BASE_KEY);
-  if (stored !== null) return stored.replace(/\/$/, "");
-  return (
-    import.meta.env.VITE_LANDA_API_URL?.replace(/\/$/, "") ??
-    "http://landa-back.tharavad.xyz"
-  );
+  if (stored !== null && stored !== "") return stored.replace(/\/$/, "");
+  // prefer same-origin so session cookies work
+  if (import.meta.env.VITE_LANDA_API_URL) {
+    return import.meta.env.VITE_LANDA_API_URL.replace(/\/$/, "");
+  }
+  return "";
 }
 
 export function setApiBase(base: string) {
@@ -57,11 +61,14 @@ async function request<T>(
   }
   if (auth) {
     const key = getApiKey();
-    if (!key) throw new ApiError(401, "missing API key");
-    headers.set("Authorization", `Bearer ${key}`);
+    if (key) headers.set("Authorization", `Bearer ${key}`);
   }
 
-  const res = await fetch(`${base}${path}`, { ...init, headers });
+  const res = await fetch(`${base}${path}`, {
+    ...init,
+    headers,
+    credentials: "include", // Better Auth session cookie
+  });
   const text = await res.text();
   let data: unknown = null;
   if (text) {
@@ -89,16 +96,26 @@ async function request<T>(
   return data as T;
 }
 
+export type MeResponse = {
+  project: Project;
+  backends: string[];
+  via?: "session" | "api_key";
+  user?: { id: string; email?: string; name?: string } | null;
+};
+
 export const api = {
   health: () => request<Health>("/health", {}, false),
-  me: () =>
-    request<{ project: Project; backends: string[] }>("/v1/me"),
+  me: () => request<MeResponse>("/v1/me"),
   backends: () => request<{ backends: string[] }>("/v1/backends"),
   templates: () => request<{ templates: Template[] }>("/v1/templates"),
   sandboxes: () => request<{ sandboxes: Sandbox[] }>("/v1/sandboxes"),
   sandbox: (id: string) =>
     request<{ sandbox: Sandbox }>(`/v1/sandboxes/${id}`),
-  createSandbox: (body: { template?: string; label?: string }) =>
+  createSandbox: (body: {
+    template?: string;
+    label?: string;
+    ttlSec?: number;
+  }) =>
     request<{ sandbox: Sandbox }>("/v1/sandboxes", {
       method: "POST",
       body: JSON.stringify(body),

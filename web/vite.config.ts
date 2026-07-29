@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/v1": { target: apiTarget, changeOrigin: true },
         "/health": { target: apiTarget, changeOrigin: true },
+        "/api/auth": { target: apiTarget, changeOrigin: true },
       },
     },
   };
