@@ -20,12 +20,20 @@ import {
 import {
   cloneRepo,
   ensureVolume,
+  hostList,
+  hostRead,
+  hostWrite,
   parseGuestIp,
   pushWorkspace,
   pullWorkspace,
   sessionVolumePath,
 } from "../sessions.js";
 import { rm } from "node:fs/promises";
+
+/** Host-first: volume is truth; seat is optional isolated runner. */
+const SESSION_EDIT_MODE = "host-first" as const;
+const SESSION_HINT =
+  "Host volume is truth. Keep seat stopped while editing (files API / agents / T3). start only for isolated exec; stop pulls guest → host.";
 
 type Sql = ReturnType<typeof sql>;
 
@@ -336,6 +344,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       ORDER BY updated_at DESC
     `;
     return c.json({
+      editMode: SESSION_EDIT_MODE,
       sessions: rows.map((r) => ({
         id: r.id,
         name: r.name,
@@ -348,8 +357,10 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         createdAt: r.created_at,
         updatedAt: r.updated_at,
         lastAttachAt: r.last_attach_at,
-        // volume_path is host-internal — hide full path from clients
         hasVolume: Boolean(r.volume_path),
+        editMode: SESSION_EDIT_MODE,
+        workspace: "/workspace",
+        filesVia: r.status === "running" ? "seat" : "host",
       })),
     });
   });
@@ -362,7 +373,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     if (!a.userId) return c.json({ error: "user identity required" }, 401);
     const rows = await sql()`
       SELECT id, name, status, repo_url, computer_id, guest_ip, ssh_hint,
-             error, created_at, updated_at, last_attach_at
+             error, created_at, updated_at, last_attach_at, volume_path
       FROM sessions
       WHERE id = ${id}::uuid AND user_id = ${a.userId}
       LIMIT 1
@@ -382,33 +393,45 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         lastAttachAt: row.last_attach_at,
+        hasVolume: Boolean(row.volume_path),
+        editMode: SESSION_EDIT_MODE,
+        workspace: "/workspace",
+        filesVia: row.status === "running" ? "seat" : "host",
       },
+      hint: SESSION_HINT,
     });
   });
 
   /**
-   * Create session: volume on host + optional git clone + boot seat + push /workspace.
-   * Body: { name?, repo? }
+   * Create session (host-first):
+   * - Always create host volume (+ optional git clone on API host)
+   * - boot=false (default): status=stopped — edit via files API without a seat
+   * - boot=true: Firecracker seat + push volume → /workspace
+   * Body: { name?, repo?, boot? }
    */
   app.post("/v1/sessions", requireAuth, async (c) => {
     const a = c.get("auth");
     if (!a.userId) {
       return c.json({ error: "user identity required" }, 401);
     }
-    if (!plane.backends().includes("firecracker")) {
-      return c.json(
-        {
-          error: "backend_unavailable",
-          message: "landa-run needs firecracker on this host",
-        },
-        501,
-      );
-    }
     const body = (await c.req.json().catch(() => ({}))) as {
       name?: string;
       repo?: string;
       repoUrl?: string;
+      boot?: boolean;
+      /** @deprecated use boot */
+      start?: boolean;
     };
+    const bootSeat = body.boot === true || body.start === true;
+    if (bootSeat && !plane.backends().includes("firecracker")) {
+      return c.json(
+        {
+          error: "backend_unavailable",
+          message: "boot=true needs firecracker on this host",
+        },
+        501,
+      );
+    }
     const nameP = parseLabel(body.name, {
       field: "name",
       defaultValue: `run-${Date.now().toString(36)}`,
@@ -456,7 +479,6 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       const cl = await cloneRepo(volumePath, repoUrl);
       if (!cl.ok) {
         await ensureVolume(volumePath);
-        // soft-fail: still create session with empty workspace
         console.warn("[sessions] clone failed:", cl.error);
       }
     } else {
@@ -473,11 +495,33 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         ${a.userId},
         ${a.projectId}::uuid,
         ${name},
-        'creating',
+        ${bootSeat ? "creating" : "stopped"},
         ${volumePath},
         ${repoUrl || null}
       )
     `;
+
+    if (!bootSeat) {
+      return c.json(
+        {
+          session: {
+            id: sessionId,
+            name,
+            status: "stopped",
+            repoUrl: repoUrl || null,
+            computerId: null,
+            guestIp: null,
+            sshHint: null,
+            workspace: "/workspace",
+            editMode: SESSION_EDIT_MODE,
+            filesVia: "host",
+            hasVolume: true,
+          },
+          hint: SESSION_HINT,
+        },
+        201,
+      );
+    }
 
     try {
       const started = await bootSessionSeat(plane, volumePath, name);
@@ -503,15 +547,19 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
             guestIp: started.guestIp,
             sshHint: started.sshHint,
             workspace: "/workspace",
+            editMode: SESSION_EDIT_MODE,
+            filesVia: "seat",
+            hasVolume: true,
           },
-          hint: "Persistent volume on host. stop keeps files; start boots a new seat and restores /workspace.",
+          hint: SESSION_HINT,
         },
         201,
       );
     } catch (e) {
+      // volume kept — host-first can still edit stopped/error session
       await db`
         UPDATE sessions SET
-          status = 'error',
+          status = 'stopped',
           error = ${String(e).slice(0, 500)},
           updated_at = now()
         WHERE id = ${sessionId}::uuid
@@ -521,6 +569,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
           error: "session_boot_failed",
           message: String(e).slice(0, 500),
           sessionId,
+          hint: "Volume kept (status=stopped). Edit via files API or retry start.",
         },
         500,
       );
@@ -678,10 +727,10 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
   });
 
   /**
-   * Session files — same plane.writeFile/readFile as sandboxes, but paths
-   * must live under /workspace (synced to host volume on stop).
-   * Guest has no git; prefer POST create with repo= for clones.
-   * Disk is small (~256MiB rootfs, ~160MiB free) — keep uploads lean.
+   * Session files (host-first):
+   * - status != running → read/write HOST volume (truth)
+   * - status == running → guest /workspace (single writer: seat)
+   * Host writes while seat running → 409 (stop first to avoid split brain)
    */
   app.post("/v1/sessions/:id/files", requireAuth, async (c) => {
     const a = c.get("auth");
@@ -697,21 +746,50 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     if (isErr(pathP)) return c.json(pathP, 400);
     const contentP = parseFileContent(body.content);
     if (isErr(contentP)) return c.json(contentP, 400);
-    const live = await liveSessionComputer(a.userId, id);
-    if (!live.ok) return c.json(live.body, live.status as 400);
+
+    const row = await loadSessionRow(a.userId, id);
+    if (!row) return c.json({ error: "not found" }, 404);
+    if (row.status === "destroyed") {
+      return c.json({ error: "destroyed" }, 410);
+    }
+
     try {
-      await plane.writeFile(live.computerId, {
-        path: pathP.path,
-        content: contentP.content,
-      });
+      if (row.status === "running" && row.computer_id) {
+        await plane.writeFile(row.computer_id, {
+          path: pathP.path,
+          content: contentP.content,
+        });
+        await sql()`
+          UPDATE sessions SET last_attach_at = now(), updated_at = now()
+          WHERE id = ${id}::uuid
+        `;
+        return c.json({
+          ok: true,
+          path: pathP.path,
+          via: "seat",
+          editMode: SESSION_EDIT_MODE,
+        });
+      }
+      // host-first default path
+      await hostWrite(row.volume_path, pathP.path, contentP.content);
       await sql()`
         UPDATE sessions SET last_attach_at = now(), updated_at = now()
         WHERE id = ${id}::uuid
       `;
-      return c.json({ ok: true, path: pathP.path });
+      return c.json({
+        ok: true,
+        path: pathP.path,
+        via: "host",
+        editMode: SESSION_EDIT_MODE,
+      });
     } catch (e) {
       const { status, body: errBody } = landaErrorToHttp(e);
-      return c.json(errBody, status as 400);
+      return c.json(
+        errBody.error
+          ? errBody
+          : { error: "write_failed", message: String(e).slice(0, 400) },
+        status as 400,
+      );
     }
   });
 
@@ -742,18 +820,36 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       if (isErr(pathP)) return c.json(pathP, 400);
       path = pathP.path;
     }
-    const live = await liveSessionComputer(a.userId, id);
-    if (!live.ok) return c.json(live.body, live.status as 400);
+
+    const row = await loadSessionRow(a.userId, id);
+    if (!row) return c.json({ error: "not found" }, 404);
+    if (row.status === "destroyed") {
+      return c.json({ error: "destroyed" }, 410);
+    }
+
     try {
-      if (mode === "read") {
-        const file = await plane.readFile(live.computerId, path);
-        return c.json({ file });
+      if (row.status === "running" && row.computer_id) {
+        if (mode === "read") {
+          const file = await plane.readFile(row.computer_id, path);
+          return c.json({ file, via: "seat", editMode: SESSION_EDIT_MODE });
+        }
+        const entries = await plane.listFiles(row.computer_id, path);
+        return c.json({ entries, via: "seat", editMode: SESSION_EDIT_MODE });
       }
-      const entries = await plane.listFiles(live.computerId, path);
-      return c.json({ entries });
+      if (mode === "read") {
+        const file = await hostRead(row.volume_path, path);
+        return c.json({ file, via: "host", editMode: SESSION_EDIT_MODE });
+      }
+      const entries = await hostList(row.volume_path, path);
+      return c.json({ entries, via: "host", editMode: SESSION_EDIT_MODE });
     } catch (e) {
       const { status, body: errBody } = landaErrorToHttp(e);
-      return c.json(errBody, status as 400);
+      return c.json(
+        errBody.error
+          ? errBody
+          : { error: "read_failed", message: String(e).slice(0, 400) },
+        status as 400,
+      );
     }
   });
 
@@ -1409,12 +1505,37 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         status: 409,
         body: {
           error: "session_not_running",
-          message: "Start the session first",
+          message:
+            "Seat is stopped (host-first). Edit files on the host volume, or POST …/start for isolated exec.",
           status: row.status,
+          editMode: SESSION_EDIT_MODE,
+          filesVia: "host",
         },
       };
     }
     return { ok: true, computerId: row.computer_id };
+  }
+
+  async function loadSessionRow(
+    userId: string,
+    sessionId: string,
+  ): Promise<{
+    volume_path: string;
+    status: string;
+    computer_id: string | null;
+  } | null> {
+    const rows = await sql()`
+      SELECT volume_path, status, computer_id FROM sessions
+      WHERE id = ${sessionId}::uuid AND user_id = ${userId}
+      LIMIT 1
+    `;
+    return (
+      (rows[0] as {
+        volume_path: string;
+        status: string;
+        computer_id: string | null;
+      } | undefined) ?? null
+    );
   }
 
   return app;

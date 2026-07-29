@@ -247,19 +247,27 @@ export const api = {
         createdAt: string;
         updatedAt: string;
         lastAttachAt: string | null;
+        editMode?: string;
+        filesVia?: string;
+        workspace?: string;
+        hasVolume?: boolean;
       };
+      hint?: string;
     }>(`/v1/sessions/${id}`),
-  createSession: (body: { name?: string; repo?: string }) =>
+  createSession: (body: { name?: string; repo?: string; boot?: boolean }) =>
     request<{
       session: {
         id: string;
         name: string;
         status: string;
         repoUrl: string | null;
-        computerId: string;
-        guestIp: string;
-        sshHint: string;
+        computerId: string | null;
+        guestIp: string | null;
+        sshHint: string | null;
         workspace: string;
+        editMode?: string;
+        filesVia?: string;
+        hasVolume?: boolean;
       };
       hint?: string;
     }>("/v1/sessions", {

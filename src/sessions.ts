@@ -1,14 +1,22 @@
 /**
- * landa-run v0 — stupid persistent sessions.
+ * landa-run — host-first sessions.
  *
  * Truth = directory on the API host (volume_path).
- * Live seat = Firecracker landa-agent VM.
- * stop  → pull /workspace → destroy seat → keep dir
- * start → create seat → push dir → /workspace
+ * Default: keep seat STOPPED; agents/T3 edit the host volume via API.
+ * start  → boot Firecracker seat + push volume → guest /workspace
+ * stop   → pull /workspace → host volume, destroy seat
+ * exec/files while running → guest; while stopped → host volume
  */
 import { spawn } from "node:child_process";
-import { access, mkdir, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import {
+  access,
+  mkdir,
+  readdir,
+  readFile,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { constants } from "node:fs";
 
 export function volumesRoot(): string {
@@ -30,14 +38,91 @@ export async function ensureVolume(path: string): Promise<void> {
   await writeFile(
     join(path, "README-LANDA.md"),
     [
-      "# landa-run workspace",
+      "# landa-run workspace (host-first)",
       "",
-      "Persistent cloud workspace (host volume synced to guest /workspace).",
-      "stop keeps this directory; destroy wipes it.",
+      "This directory on the API host is the source of truth.",
+      "Edit here while the seat is stopped (agents / T3 / files API).",
+      "start → boots a Firecracker seat and pushes this tree to /workspace.",
+      "stop → pulls /workspace back here and kills the seat.",
+      "destroy → wipes this directory.",
       "",
     ].join("\n"),
     "utf8",
   );
+}
+
+/** Map guest-style /workspace/... path → absolute path under volume. */
+export function resolveVolumePath(
+  volumePath: string,
+  workspacePath: string,
+): { ok: true; abs: string; rel: string } | { ok: false; error: string } {
+  let p = workspacePath.trim();
+  if (!p || p.includes("\0") || p.includes("..")) {
+    return { ok: false, error: "invalid path" };
+  }
+  if (p === "/workspace" || p === "/workspace/") {
+    return { ok: true, abs: volumePath, rel: "." };
+  }
+  if (p.startsWith("/workspace/")) {
+    p = p.slice("/workspace/".length);
+  } else if (p.startsWith("/")) {
+    return { ok: false, error: "path must be under /workspace" };
+  }
+  const abs = resolve(volumePath, p);
+  const relToVol = relative(volumePath, abs);
+  if (relToVol.startsWith("..") || relToVol.startsWith(sep + "..")) {
+    return { ok: false, error: "path escapes volume" };
+  }
+  return { ok: true, abs, rel: relToVol || "." };
+}
+
+export async function hostList(
+  volumePath: string,
+  workspacePath = "/workspace",
+): Promise<{ path: string; kind: string; size: number }[]> {
+  const r = resolveVolumePath(volumePath, workspacePath);
+  if (!r.ok) throw new Error(r.error);
+  await mkdir(r.abs, { recursive: true });
+  const names = await readdir(r.abs);
+  const out: { path: string; kind: string; size: number }[] = [];
+  for (const name of names) {
+    if (name === "." || name === "..") continue;
+    const full = join(r.abs, name);
+    const st = await stat(full).catch(() => null);
+    if (!st) continue;
+    out.push({
+      path: name,
+      kind: st.isDirectory() ? "directory" : st.isFile() ? "file" : "other",
+      size: st.size,
+    });
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export async function hostRead(
+  volumePath: string,
+  workspacePath: string,
+): Promise<{ path: string; content: string }> {
+  const r = resolveVolumePath(volumePath, workspacePath);
+  if (!r.ok) throw new Error(r.error);
+  const content = await readFile(r.abs, "utf8");
+  return { path: workspacePath.startsWith("/") ? workspacePath : `/workspace/${workspacePath}`, content };
+}
+
+export async function hostWrite(
+  volumePath: string,
+  workspacePath: string,
+  content: string,
+): Promise<{ path: string }> {
+  const r = resolveVolumePath(volumePath, workspacePath);
+  if (!r.ok) throw new Error(r.error);
+  await mkdir(dirname(r.abs), { recursive: true });
+  await writeFile(r.abs, content, "utf8");
+  return {
+    path: workspacePath.startsWith("/workspace")
+      ? workspacePath
+      : `/workspace/${workspacePath}`,
+  };
 }
 
 /** Clone into volume (API host needs git + network). */

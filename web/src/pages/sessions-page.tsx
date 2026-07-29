@@ -84,7 +84,11 @@ export function SessionsPage({ onOpen }: { onOpen: (id: string) => void }) {
         name: name.trim() || undefined,
         repo: repo.trim() || undefined,
       });
-      toast.success(`Session ${r.session.name} running`);
+      toast.success(
+        r.session.status === "running"
+          ? `Session ${r.session.name} running`
+          : `Session ${r.session.name} ready (stopped — host volume)`,
+      );
       setOpen(false);
       setName("");
       setRepo("");
@@ -144,7 +148,7 @@ export function SessionsPage({ onOpen }: { onOpen: (id: string) => void }) {
     <PageContainer className="flex flex-col gap-6 pb-12">
       <PageHeader
         title="Sessions"
-        description="landa-run v0: persistent workspace on the host. stop keeps files; start boots a new seat and restores /workspace."
+        description="Host-first: volume on the API host is truth. Create stopped → edit files anytime. Start a seat only for isolated exec."
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => void refresh()}>
@@ -167,8 +171,9 @@ export function SessionsPage({ onOpen }: { onOpen: (id: string) => void }) {
             </EmptyMedia>
             <EmptyTitle>No sessions yet</EmptyTitle>
             <EmptyDescription>
-              Create a long-lived run seat. Optional git clone into the
-              workspace. Agent can live here; VMs tab is for disposable workers.
+              Create a host volume (dev home). Optional git clone on the API
+              host. Keep the seat stopped while editing; start only to run
+              offline tools in Firecracker.
             </EmptyDescription>
           </EmptyHeader>
           <Button size="sm" onClick={() => setOpen(true)}>
@@ -261,9 +266,9 @@ export function SessionsPage({ onOpen }: { onOpen: (id: string) => void }) {
           <DialogHeader>
             <DialogTitle>New session</DialogTitle>
             <DialogDescription>
-              Boots a Firecracker seat and syncs a host volume to{" "}
-              <code className="font-mono text-xs">/workspace</code>. Optional
-              public git clone on the API host.
+              Host-first: creates a durable volume (optional git clone). Seat
+              stays <strong>stopped</strong> so agents/T3 can edit files. Start
+              later only for isolated Firecracker exec.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
@@ -280,7 +285,7 @@ export function SessionsPage({ onOpen }: { onOpen: (id: string) => void }) {
               <Label htmlFor="srepo">
                 Repo URL{" "}
                 <span className="font-normal text-muted-foreground">
-                  (optional, https)
+                  (optional, https — cloned on API host)
                 </span>
               </Label>
               <Input
@@ -297,7 +302,7 @@ export function SessionsPage({ onOpen }: { onOpen: (id: string) => void }) {
               Cancel
             </Button>
             <Button disabled={busy} onClick={() => void create()}>
-              {busy ? "Creating…" : "Create & start"}
+              {busy ? "Creating…" : "Create workspace"}
             </Button>
           </DialogFooter>
         </DialogContent>

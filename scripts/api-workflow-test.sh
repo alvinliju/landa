@@ -215,21 +215,19 @@ if [[ -n "$SID" && "$SID" != "null" ]]; then
 fi
 
 # ── 8. sessions (landa-run) ──────────────────────────────────────
-step "POST /v1/sessions (create + boot)"
+step "POST /v1/sessions (host-first, no boot)"
 SNAME="wf-$(date +%s)"
-# clone optional — public repo may fail offline host; empty workspace still ok
 req "session-create" "201" -X POST "$BASE/v1/sessions" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d "{\"name\":\"$SNAME\"}"
-# if firecracker boot fails we get 500 — record and continue
 SESS=$(json_field '.session.id // empty')
+SSTAT=$(json_field '.session.status // empty')
 if [[ -z "$SESS" || "$SESS" == "null" ]]; then
-  # try soft: maybe 500 with sessionId
-  SESS=$(json_field '.sessionId // empty')
-  bad "session create did not return running session (body=$(echo "$LAST_BODY" | head -c 200))"
+  bad "session create failed (body=$(echo "$LAST_BODY" | head -c 200))"
 else
-  ok "session=$SESS status=$(json_field '.session.status // empty')"
+  ok "session=$SESS status=$SSTAT"
+  [[ "$SSTAT" == "stopped" ]] && ok "host-first default stopped" || bad "want stopped got $SSTAT"
 
   step "GET /v1/sessions"
   req "session-list" "200" -H "Authorization: Bearer $API_KEY" "$BASE/v1/sessions"
@@ -237,23 +235,17 @@ else
   step "GET /v1/sessions/:id"
   req "session-get" "200" -H "Authorization: Bearer $API_KEY" "$BASE/v1/sessions/$SESS"
 
-  step "POST /v1/sessions/:id/exec"
-  req "session-exec" "200" -X POST "$BASE/v1/sessions/$SESS/exec" \
-    -H "Authorization: Bearer $API_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"cmd":"ls -la /workspace 2>/dev/null || ls -la /work; echo sess-ok"}'
-  echo "$LAST_BODY" | jq -c '{exitCode:.result.exitCode,stdout:(.result.stdout|.[0:160])}' 2>/dev/null || true
-
-  step "POST /v1/sessions/:id/files (write under /workspace)"
-  req "session-file-write" "200" -X POST "$BASE/v1/sessions/$SESS/files" \
+  step "POST /v1/sessions/:id/files while stopped (host)"
+  req "session-file-write-host" "200" -X POST "$BASE/v1/sessions/$SESS/files" \
     -H "Authorization: Bearer $API_KEY" \
     -H "Content-Type: application/json" \
     -d '{"path":"/workspace/wf-upload.txt","content":"session-files-ok\n"}'
+  [[ "$(json_field '.via // empty')" == "host" ]] && ok "via=host" || ok "via=$(json_field '.via // empty')"
 
-  step "GET /v1/sessions/:id/files?mode=read"
-  req "session-file-read" "200" -H "Authorization: Bearer $API_KEY" \
+  step "GET /v1/sessions/:id/files?mode=read (host)"
+  req "session-file-read-host" "200" -H "Authorization: Bearer $API_KEY" \
     "$BASE/v1/sessions/$SESS/files?path=/workspace/wf-upload.txt&mode=read"
-  echo "$LAST_BODY" | jq -c '.file.path,.file.content' 2>/dev/null || true
+  echo "$LAST_BODY" | jq -c '{via,path:.file.path,content:.file.content}' 2>/dev/null || true
 
   step "POST /v1/sessions/:id/files under /work → 400"
   req "session-file-bad-root" "400" -X POST "$BASE/v1/sessions/$SESS/files" \
@@ -261,21 +253,32 @@ else
     -H "Content-Type: application/json" \
     -d '{"path":"/work/nope.txt","content":"x"}'
 
-  step "POST /v1/sessions/:id/stop"
-  req "session-stop" "200" -X POST \
+  step "POST /v1/sessions/:id/exec while stopped → 409"
+  req "session-exec-stopped" "409" -X POST "$BASE/v1/sessions/$SESS/exec" \
     -H "Authorization: Bearer $API_KEY" \
-    "$BASE/v1/sessions/$SESS/stop"
+    -H "Content-Type: application/json" \
+    -d '{"cmd":"echo should-fail"}'
 
   step "POST /v1/sessions/:id/start"
   req "session-start" "200" -X POST \
     -H "Authorization: Bearer $API_KEY" \
     "$BASE/v1/sessions/$SESS/start"
 
-  step "POST /v1/sessions/:id/exec after restart"
-  req "session-exec-2" "200" -X POST "$BASE/v1/sessions/$SESS/exec" \
+  step "POST /v1/sessions/:id/exec after start"
+  req "session-exec" "200" -X POST "$BASE/v1/sessions/$SESS/exec" \
     -H "Authorization: Bearer $API_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"cmd":"test -f /workspace/README-LANDA.md && cat /workspace/README-LANDA.md | head -3 || echo no-readme"}'
+    -d '{"cmd":"test -f /workspace/wf-upload.txt && cat /workspace/wf-upload.txt || echo missing"}'
+  echo "$LAST_BODY" | jq -c '{exitCode:.result.exitCode,stdout:(.result.stdout|.[0:120])}' 2>/dev/null || true
+
+  step "POST /v1/sessions/:id/stop"
+  req "session-stop" "200" -X POST \
+    -H "Authorization: Bearer $API_KEY" \
+    "$BASE/v1/sessions/$SESS/stop"
+
+  step "GET files after stop still on host"
+  req "session-file-read-after-stop" "200" -H "Authorization: Bearer $API_KEY" \
+    "$BASE/v1/sessions/$SESS/files?path=/workspace/wf-upload.txt&mode=read"
 
   step "DELETE /v1/sessions/:id"
   req "session-destroy" "200" -X DELETE \

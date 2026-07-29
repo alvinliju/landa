@@ -42,6 +42,10 @@ type SessionDetail = {
   createdAt: string;
   updatedAt: string;
   lastAttachAt: string | null;
+  editMode?: string;
+  filesVia?: string;
+  workspace?: string;
+  hasVolume?: boolean;
 };
 
 type LogEntry = {
@@ -144,10 +148,27 @@ export function SessionDetailPage({
     return s as SessionDetail;
   }, [id]);
 
+  const loadWorkspace = React.useCallback(async () => {
+    try {
+      const list = await api.sessionListFiles(id, "/workspace");
+      setWorkspace(
+        (list.entries ?? []).map((e) => ({
+          path: e.path || e.name || "?",
+          size: e.size,
+          kind: e.kind,
+        })),
+      );
+    } catch {
+      setWorkspace(null);
+    }
+  }, [id]);
+
   React.useEffect(() => {
     setLogs(loadLogs(id));
-    void load().catch((e) => toast.error(String(e.message ?? e)));
-  }, [id, load]);
+    void load()
+      .then(() => loadWorkspace())
+      .catch((e) => toast.error(String(e.message ?? e)));
+  }, [id, load, loadWorkspace]);
 
   React.useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -157,19 +178,8 @@ export function SessionDetailPage({
     setBusy(true);
     try {
       const s = await load();
+      await loadWorkspace();
       if (s.status === "running") {
-        try {
-          const list = await api.sessionListFiles(id, "/workspace");
-          setWorkspace(
-            (list.entries ?? []).map((e) => ({
-              path: e.path || e.name || "?",
-              size: e.size,
-              kind: e.kind,
-            })),
-          );
-        } catch {
-          setWorkspace(null);
-        }
         try {
           const { result } = await api.sessionExec(
             id,
@@ -182,8 +192,7 @@ export function SessionDetailPage({
           /* optional */
         }
       } else {
-        setWorkspace(null);
-        setDiskHint(null);
+        setDiskHint("Host volume (seat stopped) — files via host");
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Refresh failed");
@@ -191,29 +200,6 @@ export function SessionDetailPage({
       setBusy(false);
     }
   }
-
-  React.useEffect(() => {
-    if (!session || session.status !== "running") return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const list = await api.sessionListFiles(id, "/workspace");
-        if (cancelled) return;
-        setWorkspace(
-          (list.entries ?? []).map((e) => ({
-            path: e.path || e.name || "?",
-            size: e.size,
-            kind: e.kind,
-          })),
-        );
-      } catch {
-        if (!cancelled) setWorkspace(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, session?.status]);
 
   async function runExec(e: React.FormEvent) {
     e.preventDefault();
@@ -370,7 +356,10 @@ export function SessionDetailPage({
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge status={session.status} />
         <span className="rounded-md border px-2 py-0.5 text-[0.65rem] text-muted-foreground">
-          landa-run · /workspace
+          host-first · /workspace
+        </span>
+        <span className="rounded-md border px-2 py-0.5 text-[0.65rem] text-muted-foreground">
+          files via {session.filesVia ?? (running ? "seat" : "host")}
         </span>
         {session.error ? (
           <span className="max-w-full truncate rounded-md border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[0.65rem] text-destructive">
@@ -378,6 +367,17 @@ export function SessionDetailPage({
           </span>
         ) : null}
       </div>
+
+      <Card size="sm" className="border-dashed">
+        <CardContent className="py-3 text-xs text-muted-foreground">
+          <strong className="text-foreground">Host-first:</strong> host volume
+          is truth. Keep the seat <em>stopped</em> while agents/T3 edit files.
+          <strong className="text-foreground"> Start</strong> only for isolated
+          Firecracker exec; <strong className="text-foreground">Stop</strong>{" "}
+          pulls guest → host. Single writer: don&apos;t edit host while the seat
+          is running.
+        </CardContent>
+      </Card>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -444,18 +444,13 @@ export function SessionDetailPage({
               <CardTitle className="text-sm">/workspace</CardTitle>
               <CardDescription>
                 {running
-                  ? "Listing from guest (list files)"
-                  : "Start the session to list files"}
+                  ? "Listing from live seat"
+                  : "Listing from host volume (seat stopped)"}
               </CardDescription>
             </div>
           </CardHeader>
           <CardContent>
-            {!running ? (
-              <p className="text-xs text-muted-foreground">
-                Session is stopped. Files remain on the host volume until you
-                start again.
-              </p>
-            ) : workspace === null ? (
+            {workspace === null ? (
               <p className="text-xs text-muted-foreground">
                 Refresh to load workspace listing.
               </p>
