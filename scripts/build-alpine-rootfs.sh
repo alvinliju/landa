@@ -78,12 +78,12 @@ EOF
 
 chroot rootfs /bin/sh -c "
   set -e
-  apk update --no-progress
-  apk add --no-progress --no-cache dropbear dropbear-dbclient openrc busybox-extras
-  # dropbear provides /usr/sbin/dropbear
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  /sbin/apk update --no-progress
+  /sbin/apk add --no-progress --no-cache dropbear dropbear-dbclient busybox-extras
 " || {
   umount rootfs/dev rootfs/proc rootfs/sys 2>/dev/null || true
-  echo "apk install failed — is network available?" >&2
+  echo "apk install failed — is network available from chroot?" >&2
   exit 1
 }
 
