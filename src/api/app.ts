@@ -35,6 +35,47 @@ const SESSION_EDIT_MODE = "host-first" as const;
 const SESSION_HINT =
   "Host volume is truth. Keep seat stopped while editing (files API / agents / T3). start only for isolated exec; stop pulls guest → host.";
 
+/** Co-located T3 on API host: set LANDA_EXPOSE_VOLUME_PATHS=1 (never on public edge). */
+function exposeVolumePaths(): boolean {
+  return process.env.LANDA_EXPOSE_VOLUME_PATHS === "1";
+}
+
+function sessionPublicFields(r: {
+  id: unknown;
+  name: unknown;
+  status: string;
+  repo_url: unknown;
+  computer_id: unknown;
+  guest_ip: unknown;
+  ssh_hint: unknown;
+  error: unknown;
+  created_at: unknown;
+  updated_at: unknown;
+  last_attach_at: unknown;
+  volume_path?: string | null;
+}) {
+  return {
+    id: r.id,
+    name: r.name,
+    status: r.status,
+    repoUrl: r.repo_url,
+    computerId: r.computer_id,
+    guestIp: r.guest_ip,
+    sshHint: r.ssh_hint,
+    error: r.error,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    lastAttachAt: r.last_attach_at,
+    hasVolume: Boolean(r.volume_path),
+    editMode: SESSION_EDIT_MODE,
+    workspace: "/workspace",
+    filesVia: r.status === "running" ? "seat" : "host",
+    ...(exposeVolumePaths() && r.volume_path
+      ? { volumePath: r.volume_path }
+      : {}),
+  };
+}
+
 type Sql = ReturnType<typeof sql>;
 
 type OwnedSandboxRow = {
@@ -345,23 +386,24 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     `;
     return c.json({
       editMode: SESSION_EDIT_MODE,
-      sessions: rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        status: r.status,
-        repoUrl: r.repo_url,
-        computerId: r.computer_id,
-        guestIp: r.guest_ip,
-        sshHint: r.ssh_hint,
-        error: r.error,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-        lastAttachAt: r.last_attach_at,
-        hasVolume: Boolean(r.volume_path),
-        editMode: SESSION_EDIT_MODE,
-        workspace: "/workspace",
-        filesVia: r.status === "running" ? "seat" : "host",
-      })),
+      sessions: rows.map((r) =>
+        sessionPublicFields(
+          r as {
+            id: unknown;
+            name: unknown;
+            status: string;
+            repo_url: unknown;
+            computer_id: unknown;
+            guest_ip: unknown;
+            ssh_hint: unknown;
+            error: unknown;
+            created_at: unknown;
+            updated_at: unknown;
+            last_attach_at: unknown;
+            volume_path?: string | null;
+          },
+        ),
+      ),
     });
   });
 
@@ -381,23 +423,22 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const row = rows[0];
     if (!row) return c.json({ error: "not found" }, 404);
     return c.json({
-      session: {
-        id: row.id,
-        name: row.name,
-        status: row.status,
-        repoUrl: row.repo_url,
-        computerId: row.computer_id,
-        guestIp: row.guest_ip,
-        sshHint: row.ssh_hint,
-        error: row.error,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        lastAttachAt: row.last_attach_at,
-        hasVolume: Boolean(row.volume_path),
-        editMode: SESSION_EDIT_MODE,
-        workspace: "/workspace",
-        filesVia: row.status === "running" ? "seat" : "host",
-      },
+      session: sessionPublicFields(
+        row as {
+          id: unknown;
+          name: unknown;
+          status: string;
+          repo_url: unknown;
+          computer_id: unknown;
+          guest_ip: unknown;
+          ssh_hint: unknown;
+          error: unknown;
+          created_at: unknown;
+          updated_at: unknown;
+          last_attach_at: unknown;
+          volume_path?: string | null;
+        },
+      ),
       hint: SESSION_HINT,
     });
   });
