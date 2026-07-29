@@ -24,7 +24,7 @@ SDK / curl / later MCP
 | GET | `/v1/me` | key | project + limits |
 | GET | `/v1/templates` | key | list templates |
 | GET | `/v1/sandboxes` | key | list non-destroyed |
-| POST | `/v1/sandboxes` | key | create (`template`, `label`) |
+| POST | `/v1/sandboxes` | key | create (`template`, `label`, optional `ttlSec` ≤ project max) |
 | GET | `/v1/sandboxes/:id` | key | get |
 | DELETE | `/v1/sandboxes/:id` | key | destroy |
 | POST | `/v1/sandboxes/:id/exec` | key | `{ "cmd": "…" }` memory + docker |
@@ -45,7 +45,7 @@ Templates: `landa-agent` (Grok default), `landa-lite` (shell smoke).
 | API Keys | `api_keys` (hashed) |
 | Sandboxes | `sandboxes` + backend seat |
 | Templates | `templates` |
-| Usage / Limits | `max_concurrent`, `expires_at` |
+| Usage / Limits | `max_concurrent`, `expires_at` (TTL; reaper destroys after expiry, default 8h) |
 | Webhooks / Billing | later |
 
 ## dev = deploy shape

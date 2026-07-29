@@ -7,7 +7,7 @@ CREATE TABLE projects (
   slug TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   max_concurrent INT NOT NULL DEFAULT 20,
-  max_session_sec INT NOT NULL DEFAULT 3600,
+  max_session_sec INT NOT NULL DEFAULT 28800, -- 8h seat TTL
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

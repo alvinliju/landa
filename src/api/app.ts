@@ -106,6 +106,8 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const body = (await c.req.json().catch(() => ({}))) as {
       template?: string;
       label?: string;
+      /** optional TTL seconds (capped by project maxSessionSec) */
+      ttlSec?: number;
     };
     const templateSlug = body.template ?? "landa-agent";
     const label = body.label ?? "";
@@ -139,7 +141,16 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       return c.json({ error: "unknown template", template: templateSlug }, 400);
     }
 
-    const expires = new Date(Date.now() + auth.maxSessionSec * 1000);
+    // TTL: request override or project max (default seed 8h)
+    let ttlSec = auth.maxSessionSec;
+    if (
+      typeof body.ttlSec === "number" &&
+      Number.isFinite(body.ttlSec) &&
+      body.ttlSec > 0
+    ) {
+      ttlSec = Math.min(Math.floor(body.ttlSec), auth.maxSessionSec);
+    }
+    const expires = new Date(Date.now() + ttlSec * 1000);
     let hostMeta: Record<string, unknown> = {};
     let status = "running";
     let err: string | null = null;

@@ -7,7 +7,7 @@ SELECT
   'dev',
   'Local dev',
   20,
-  3600
+  28800 -- 8h max seat lifetime
 WHERE
   NOT EXISTS (
     SELECT 1 FROM projects WHERE slug = 'dev'

@@ -151,6 +151,11 @@ export function SandboxDetailPage({
             create {sandbox.metadata.createMs}ms
           </span>
         ) : null}
+        {sandbox.expires_at ? (
+          <span className="rounded-md border border-border/60 px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
+            ttl {new Date(sandbox.expires_at).toLocaleString()}
+          </span>
+        ) : null}
       </div>
 
       <Card>
