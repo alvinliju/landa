@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
 import { publicApiBase } from "@/lib/navigation";
 
 type ApiKeyRow = {
@@ -86,12 +87,27 @@ export function ApiKeysPage() {
   async function copyKey() {
     if (!freshKey) return;
     try {
-      await navigator.clipboard.writeText(freshKey);
+      await copyToClipboard(freshKey);
       setCopied(true);
       toast.success("Key copied");
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Could not copy");
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Could not copy — select the key manually",
+      );
+    }
+  }
+
+  async function copyEnvBlock() {
+    if (!freshKey) return;
+    const block = `export LANDA_API_KEY='${freshKey}'\nexport LANDA_API_BASE='${publicApiBase()}'`;
+    try {
+      await copyToClipboard(block);
+      toast.success("Env block copied");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Could not copy",
+      );
     }
   }
 
@@ -168,18 +184,35 @@ export function ApiKeysPage() {
                   {freshKey}
                 </code>
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
                   className="shrink-0"
                   onClick={() => void copyKey()}
                 >
                   {copied ? <CheckIcon /> : <CopyIcon />}
-                  Copy
+                  Copy key
                 </Button>
               </div>
-              <pre className="mt-3 overflow-x-auto rounded-md bg-muted p-2 font-mono text-[0.65rem] text-muted-foreground">
-                {`export LANDA_API_KEY='${freshKey}'\nexport LANDA_API_BASE='${base}'`}
-              </pre>
+              <div className="mt-3 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[0.65rem] font-medium text-muted-foreground">
+                    Env for agents
+                  </span>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => void copyEnvBlock()}
+                  >
+                    <CopyIcon />
+                    Copy env
+                  </Button>
+                </div>
+                <pre className="overflow-x-auto rounded-md bg-muted p-2 font-mono text-[0.65rem] text-muted-foreground">
+                  {`export LANDA_API_KEY='${freshKey}'\nexport LANDA_API_BASE='${base}'`}
+                </pre>
+              </div>
             </div>
           ) : null}
         </CardContent>

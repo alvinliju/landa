@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { copyToClipboard } from "@/lib/clipboard";
 import { publicApiBase } from "@/lib/navigation";
 
 function CopyBlock({
@@ -23,24 +24,35 @@ function CopyBlock({
   mono?: boolean;
 }) {
   const [copied, setCopied] = React.useState(false);
-  async function copy() {
+
+  async function copy(e?: React.MouseEvent) {
+    e?.preventDefault();
+    e?.stopPropagation();
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setCopied(true);
-      toast.success("Copied");
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Could not copy");
+      toast.success("Copied to clipboard");
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Could not copy — select text manually",
+      );
     }
   }
+
   return (
     <div className="rounded-lg border bg-muted/40">
       {label ? (
-        <div className="flex items-center justify-between border-b px-3 py-1.5">
+        <div className="flex items-center justify-between gap-2 border-b px-3 py-1.5">
           <span className="text-xs font-medium text-muted-foreground">
             {label}
           </span>
-          <Button variant="ghost" size="xs" onClick={() => void copy()}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={(e) => void copy(e)}
+          >
             {copied ? <CheckIcon /> : <CopyIcon />}
             {copied ? "Copied" : "Copy"}
           </Button>
@@ -49,17 +61,22 @@ function CopyBlock({
       <pre
         className={
           mono
-            ? "overflow-x-auto p-3 font-mono text-[0.7rem] leading-relaxed"
-            : "overflow-x-auto p-3 text-xs leading-relaxed"
+            ? "overflow-x-auto p-3 font-mono text-[0.7rem] leading-relaxed whitespace-pre-wrap"
+            : "overflow-x-auto p-3 text-xs leading-relaxed whitespace-pre-wrap"
         }
       >
         {text}
       </pre>
       {!label ? (
         <div className="flex justify-end border-t px-2 py-1">
-          <Button variant="ghost" size="xs" onClick={() => void copy()}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={(e) => void copy(e)}
+          >
             {copied ? <CheckIcon /> : <CopyIcon />}
-            Copy
+            {copied ? "Copied" : "Copy"}
           </Button>
         </div>
       ) : null}
@@ -70,7 +87,7 @@ function CopyBlock({
 export function GuidePage() {
   const base = publicApiBase();
   const envBlock = `export LANDA_API_BASE='${base}'
-export LANDA_API_KEY='landa_…'   # from Settings → API keys`;
+export LANDA_API_KEY='landa_…'   # from console → API keys`;
 
   const createFlow = `# 1. Create a VM
 curl -sS -X POST -H "Authorization: Bearer $LANDA_API_KEY" \\
@@ -88,21 +105,37 @@ curl -sS -X POST -H "Authorization: Bearer $LANDA_API_KEY" \\
 curl -sS -X DELETE -H "Authorization: Bearer $LANDA_API_KEY" \\
   "$LANDA_API_BASE/v1/sandboxes/<SANDBOX_ID>"`;
 
-  const skillHint = `Give your coding agent maximum context:
+  const skillHint = `Give your coding agent:
 
-1. LANDA_API_KEY (console → API keys → Create key)
+1. LANDA_API_KEY (create under API keys in the console)
 2. LANDA_API_BASE=${base}
-3. Full skill: docs/SKILL.md (landa-vms)
+3. The skill file from the landa repo: docs/SKILL.md
 
-That skill covers E2B-style loops, /work/in·out contracts, offline
-python3+jq limits, parallel seats, 429 recovery, and always-destroy
-cleanup. Template is ONLY landa-agent.`;
+Agents should: create → exec → destroy, prefer template landa-agent,
+and never log the full API key.
+
+---
+Add the skill to your agent
+
+• Claude Code / Cursor / Codex / Grok skills:
+  Copy docs/SKILL.md into the agent's skills folder, e.g.
+  - .claude/skills/landa-vms/SKILL.md
+  - .cursor/skills/landa-vms/SKILL.md
+  - ~/.grok/skills/landa-vms/SKILL.md
+  Or paste the full file and tell the agent: "use the landa-vms skill"
+
+• Env the agent process must see:
+  export LANDA_API_KEY='landa_…'
+  export LANDA_API_BASE='${base}'
+
+• Skill name in frontmatter: landa-vms
+  Triggers: sandboxes, agent VMs, Firecracker seats, offline python/bash/jq`;
 
   return (
     <PageContainer className="flex flex-col gap-6 pb-12">
       <PageHeader
         title="Guide"
-        description="API keys, curl recipes, and how agents should drive landa VMs."
+        description="API keys, curl recipes, and how to install the landa-vms skill for agents."
       />
 
       <Card>
@@ -114,9 +147,9 @@ cleanup. Template is ONLY landa-agent.`;
             <div>
               <CardTitle>1. Create an API key</CardTitle>
               <CardDescription className="mt-1">
-                Keys are hashed at rest. The full secret is shown only once when
-                you create it — open Settings to generate one, then paste it
-                into your agent or shell.
+                Keys are hashed at rest. The full secret is shown only once —
+                open <span className="font-medium text-foreground">API keys</span>{" "}
+                to generate one, then paste it into your agent or shell.
               </CardDescription>
             </div>
           </div>
@@ -166,7 +199,9 @@ cleanup. Template is ONLY landa-agent.`;
       <Card>
         <CardHeader>
           <CardTitle>4. Endpoints</CardTitle>
-          <CardDescription>All require the Bearer key except health.</CardDescription>
+          <CardDescription>
+            All require the Bearer key except health.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto rounded-lg border">
@@ -210,18 +245,23 @@ cleanup. Template is ONLY landa-agent.`;
 
       <Card>
         <CardHeader>
-          <CardTitle>5. Hand this to an agent</CardTitle>
+          <CardTitle>5. Give your coding agent</CardTitle>
           <CardDescription>
-            Repo skill: <code className="font-mono text-xs">docs/SKILL.md</code>{" "}
-            — name <code className="font-mono text-xs">landa-vms</code>.
+            Install{" "}
+            <code className="font-mono text-xs">docs/SKILL.md</code> as skill{" "}
+            <code className="font-mono text-xs">landa-vms</code>, plus env
+            vars below.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <CopyBlock label="Agent brief" text={skillHint} mono={false} />
+          <CopyBlock label="Agent brief + skill install" text={skillHint} mono />
           <p className="text-xs text-muted-foreground">
-            Full skill with TypeScript sketch lives in the landa repository at{" "}
-            <code className="font-mono">docs/SKILL.md</code>. Point coding
-            assistants at that file plus a fresh API key from Settings.
+            Full skill (E2B-style loops, /work contracts, offline limits) lives
+            at{" "}
+            <code className="font-mono">docs/SKILL.md</code> in the landa repo.
+            Create a key under{" "}
+            <span className="font-medium text-foreground">API keys</span>, never
+            Settings.
           </p>
         </CardContent>
       </Card>
