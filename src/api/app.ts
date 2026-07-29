@@ -1426,10 +1426,17 @@ async function bootSessionSeat(
   volumePath: string,
   name: string,
 ): Promise<{ computerId: string; guestIp: string; sshHint: string }> {
+  // Must match landa-agent template: agent-rootfs has python3/bash/jq.
+  // Default firecracker pick is alpine-rootfs (busybox only) — wrong for agents.
   const info = await plane.create({
     name: `run-${name}`,
     template: "landa-agent",
     backend: "firecracker",
+    rootfs:
+      process.env.LANDA_SESSION_ROOTFS ?? "assets/agent-rootfs.ext4",
+    kernel: process.env.LANDA_FC_KERNEL
+      ? undefined
+      : "assets/vmlinux.bin",
     memoryMiB: Number(process.env.LANDA_FC_MEM_MIB ?? 256),
     labels: { kind: "session", sessionName: name },
   });
