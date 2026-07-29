@@ -32,8 +32,13 @@ SDK / curl / later MCP
 | POST | `/v1/sandboxes/:id/files` | key | write `{ path, content }` |
 | GET | `/v1/sandboxes/:id/files?path=&mode=list\|read` | key | list or read |
 | GET | `/v1/backends` | key | registered seat drivers |
+| GET | `/v1/api-keys` | session/key | list key prefixes for project |
+| POST | `/v1/api-keys` | session/key | create key (plaintext once) |
+| DELETE | `/v1/api-keys/:id` | session/key | revoke |
 
-Auth: `Authorization: Bearer <key>` or `X-Api-Key: <key>`.
+Auth: `Authorization: Bearer <key>` or `X-Api-Key: <key>`, or Better Auth session cookie.
+
+Agent skill: **`docs/SKILL.md`** (`landa-vms`) — create/exec/destroy VMs with a user API key.
 
 Templates: `landa-agent` (Grok default), `landa-lite` (shell smoke).
 

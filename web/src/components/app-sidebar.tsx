@@ -1,4 +1,5 @@
 import {
+  BookOpenIcon,
   BoxesIcon,
   LayoutDashboardIcon,
   SettingsIcon,
@@ -32,6 +33,7 @@ const nav = [
   { id: "overview" as const, title: "Overview", icon: LayoutDashboardIcon },
   { id: "sandboxes" as const, title: "VMs", icon: TerminalSquareIcon },
   { id: "templates" as const, title: "Templates", icon: BoxesIcon },
+  { id: "guide" as const, title: "Guide", icon: BookOpenIcon },
   { id: "settings" as const, title: "Settings", icon: SettingsIcon },
 ];
 

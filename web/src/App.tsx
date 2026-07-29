@@ -25,6 +25,7 @@ import {
   type LandaPage,
 } from "@/lib/navigation";
 import type { Project } from "@/lib/types";
+import { GuidePage } from "@/pages/guide-page";
 import { OverviewPage } from "@/pages/overview-page";
 import { SandboxDetailPage } from "@/pages/sandbox-detail-page";
 import { SandboxesPage } from "@/pages/sandboxes-page";
@@ -201,6 +202,7 @@ export default function App() {
             />
           ) : null}
           {route.page === "templates" ? <TemplatesPage /> : null}
+          {route.page === "guide" ? <GuidePage /> : null}
           {route.page === "settings" ? (
             <SettingsPage onSignOut={() => void handleSignOut()} />
           ) : null}

@@ -1,6 +1,7 @@
+import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import type { AppEnv, AuthProject } from "../auth.js";
-import { requireAuth } from "../auth.js";
+import { hashApiKey, requireAuth } from "../auth.js";
 import { sql } from "../db.js";
 import { ControlPlane, landaErrorToHttp } from "../control-plane.js";
 import { createMemoryPlane } from "../plane.js";
@@ -137,6 +138,101 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       backends: plane.backends(),
       vms: { active: vmCount, maxConcurrent: a.maxConcurrent },
     });
+  });
+
+  /** List project API keys (prefix only — never return full secret). */
+  app.get("/v1/api-keys", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const rows = await sql()`
+      SELECT id, label, key_prefix, last_used_at, created_at, revoked_at
+      FROM api_keys
+      WHERE project_id = ${a.projectId}::uuid
+      ORDER BY created_at DESC
+    `;
+    return c.json({
+      keys: rows.map((k) => ({
+        id: k.id,
+        label: k.label,
+        prefix: k.key_prefix,
+        lastUsedAt: k.last_used_at,
+        createdAt: k.created_at,
+        revokedAt: k.revoked_at,
+        active: k.revoked_at == null,
+      })),
+    });
+  });
+
+  /**
+   * Create API key. Plaintext returned once in `key`.
+   * Format: landa_<48 hex> — pass as Authorization: Bearer …
+   */
+  app.post("/v1/api-keys", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as { label?: string };
+    const label = (body.label ?? "agent").trim().slice(0, 64) || "agent";
+    const raw = `landa_${randomBytes(24).toString("hex")}`;
+    const prefix = raw.slice(0, 12);
+    const keyHash = hashApiKey(raw);
+    const db = sql();
+    const rows = await db`
+      INSERT INTO api_keys (project_id, label, key_prefix, key_hash)
+      VALUES (${a.projectId}::uuid, ${label}, ${prefix}, ${keyHash})
+      RETURNING id, label, key_prefix, created_at
+    `;
+    const row = rows[0] as {
+      id: string;
+      label: string;
+      key_prefix: string;
+      created_at: string;
+    };
+    await db`
+      INSERT INTO audit_events (project_id, action, detail)
+      VALUES (
+        ${a.projectId}::uuid,
+        'api_key.create',
+        ${db.json({ key_id: row.id, label, prefix })}
+      )
+    `;
+    return c.json(
+      {
+        key: raw,
+        apiKey: {
+          id: row.id,
+          label: row.label,
+          prefix: row.key_prefix,
+          createdAt: row.created_at,
+        },
+        hint: "Copy now — the full key is not shown again.",
+      },
+      201,
+    );
+  });
+
+  /** Revoke (soft-delete) an API key. */
+  app.delete("/v1/api-keys/:id", requireAuth, async (c) => {
+    const a = c.get("auth");
+    const id = c.req.param("id") as string;
+    const db = sql();
+    const updated = await db`
+      UPDATE api_keys
+      SET revoked_at = now()
+      WHERE id = ${id}::uuid
+        AND project_id = ${a.projectId}::uuid
+        AND revoked_at IS NULL
+      RETURNING id, revoked_at
+    `;
+    if (!updated[0]) {
+      return c.json({ error: "not found or already revoked" }, 404);
+    }
+    await db`
+      INSERT INTO audit_events (project_id, action, detail)
+      VALUES (
+        ${a.projectId}::uuid,
+        'api_key.revoke',
+        ${db.json({ key_id: id })}
+      )
+    `;
+    return c.json({ ok: true, apiKey: updated[0] });
   });
 
   app.get("/v1/backends", requireAuth, async (c) => {

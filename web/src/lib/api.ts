@@ -186,4 +186,32 @@ export const api = {
     request<{ file: { path: string; content: string } }>(
       `/v1/sandboxes/${id}/files?path=${encodeURIComponent(path)}&mode=read`,
     ),
+  apiKeys: () =>
+    request<{
+      keys: {
+        id: string;
+        label: string;
+        prefix: string;
+        lastUsedAt: string | null;
+        createdAt: string;
+        revokedAt: string | null;
+        active: boolean;
+      }[];
+    }>("/v1/api-keys"),
+  createApiKey: (label?: string) =>
+    request<{
+      key: string;
+      apiKey: {
+        id: string;
+        label: string;
+        prefix: string;
+        createdAt: string;
+      };
+      hint: string;
+    }>("/v1/api-keys", {
+      method: "POST",
+      body: JSON.stringify({ label: label || "agent" }),
+    }),
+  revokeApiKey: (id: string) =>
+    request<{ ok: boolean }>(`/v1/api-keys/${id}`, { method: "DELETE" }),
 };
