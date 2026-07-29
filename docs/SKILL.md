@@ -10,7 +10,7 @@ landa gives agents **real machines**: ephemeral VMs (or memory seats for smoke t
 ## Prerequisites
 
 1. User signs in at **http://landa.tharavad.xyz**
-2. **Settings → API keys → Create key** — copy the secret once (`landa_…`)
+2. **API keys → Create key** in the console — copy the secret once (`landa_…`)
 3. Put the key in the environment (never commit it):
 
 ```bash

@@ -90,7 +90,7 @@ curl -sS -X DELETE -H "Authorization: Bearer $LANDA_API_KEY" \\
 
   const skillHint = `Give your coding agent:
 
-1. LANDA_API_KEY (create under Settings → API keys)
+1. LANDA_API_KEY (create under API keys in the console)
 2. LANDA_API_BASE=${base}
 3. The skill file from the landa repo: docs/SKILL.md
 
@@ -122,8 +122,8 @@ and never log the full API key.`;
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <p className="text-sm text-muted-foreground">
-            Path: <span className="font-medium text-foreground">Settings</span>{" "}
-            → <span className="font-medium text-foreground">API keys</span> →{" "}
+            Path:{" "}
+            <span className="font-medium text-foreground">API keys</span> →{" "}
             <span className="font-medium text-foreground">Create key</span>
           </p>
           <CopyBlock label="Environment" text={envBlock} />

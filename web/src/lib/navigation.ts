@@ -4,6 +4,7 @@ export type LandaPage =
   | "sandbox"
   | "templates"
   | "guide"
+  | "api-keys"
   | "settings";
 
 export const pagePaths: Record<Exclude<LandaPage, "sandbox">, string> = {
@@ -11,6 +12,7 @@ export const pagePaths: Record<Exclude<LandaPage, "sandbox">, string> = {
   sandboxes: "/sandboxes",
   templates: "/templates",
   guide: "/guide",
+  "api-keys": "/api-keys",
   settings: "/settings",
 };
 
@@ -20,6 +22,7 @@ export const pageTitles: Record<LandaPage, string> = {
   sandbox: "VM",
   templates: "Templates",
   guide: "Guide",
+  "api-keys": "API keys",
   settings: "Settings",
 };
 
@@ -34,6 +37,7 @@ export function pageFromPath(pathname: string): {
   if (pathname.startsWith("/sandboxes")) return { page: "sandboxes" };
   if (pathname.startsWith("/templates")) return { page: "templates" };
   if (pathname.startsWith("/guide")) return { page: "guide" };
+  if (pathname.startsWith("/api-keys")) return { page: "api-keys" };
   if (pathname.startsWith("/settings")) return { page: "settings" };
   return { page: "overview" };
 }
