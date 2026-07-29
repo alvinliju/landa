@@ -28,14 +28,16 @@ landa --t3
 2. Lists your sessions (host-first)
 3. Picks/creates a session if needed
 4. Opens the web console for that session
-5. Writes `~/.config/landa/t3.env` (`LANDA_API_KEY`, `LANDA_API_BASE`, `LANDA_SESSION_ID`)
-6. Prints how to run T3 Code (`npx t3@latest`) with those env vars
-
-Optional:
+5. Writes `~/.config/landa/t3.env`
+6. **Launches bundled T3** from monorepo folder `t3/` (first run: `pnpm install` inside `t3/`)
 
 ```bash
-landa t3 --serve    # also tries: npx t3@latest serve
+landa t3              # default: start T3 (GUI backend)
+landa t3 --serve      # headless serve (pair remote UI)
+landa t3 --no-launch  # setup only, no T3 process
 ```
+
+Bundle path: `landa/t3` (fork of t3code, landa-native). Override with `LANDA_T3_ROOT`.
 
 ## Commands
 

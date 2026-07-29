@@ -45,8 +45,10 @@ function usage(): never {
 Start here:
   landa login [landa_…]          save API key (+ ask for base)
   landa --login landa_…
-  landa t3                       login if needed, list sessions, open console, write t3.env
-  landa --t3 [--serve]           same; --serve tries npx t3@latest serve
+  landa t3                       login → session → console → launch bundled T3 (./t3)
+  landa --t3                     same
+  landa t3 --serve               headless t3 serve (pair phone/desktop)
+  landa t3 --no-launch           setup only (no T3 process)
 
 Open a session:
   landa -s landa -r <session-id>
@@ -193,16 +195,21 @@ async function main() {
     return;
   }
 
-  // landa --t3 | landa t3
+  // landa --t3 | landa t3  → always launches bundled T3 (unless --no-launch)
   if (g0.t3 || g0.rest[0] === "t3") {
-    const serve =
-      g0.rest.includes("--serve") || argv.includes("--serve");
+    const rest = g0.rest[0] === "t3" ? g0.rest.slice(1) : g0.rest;
+    const noLaunch =
+      rest.includes("--no-launch") || argv.includes("--no-launch");
+    const mode = rest.includes("--serve") || argv.includes("--serve")
+      ? ("serve" as const)
+      : ("start" as const);
     await runT3({
       key: g0.key,
       base: g0.base || (g0.site ? SITE_ALIASES[g0.site] ?? g0.site : undefined),
       session: g0.session,
       browser: g0.browser,
-      serve,
+      mode,
+      noLaunch,
     });
     return;
   }

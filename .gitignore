@@ -1,5 +1,10 @@
 node_modules/
 web/node_modules/
+t3/node_modules/
+t3/**/node_modules/
+t3/**/dist/
+t3/.turbo/
+t3/.vp/
 dist/
 # ship built console for edge (API tsc dist/ still ignored)
 !web/dist/

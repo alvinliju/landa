@@ -17,6 +17,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "cli": "tsx src/cli.ts",
+    "t3": "tsx src/cli.ts t3",
+    "t3:install": "pnpm --dir t3 install",
     "demo": "tsx src/cli.ts plane demo",
     "api": "tsx src/api/server.ts",
     "api:dev": "tsx watch src/api/server.ts",
