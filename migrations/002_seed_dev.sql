@@ -26,14 +26,15 @@ WHERE
     SELECT 1 FROM templates WHERE slug = 'memory-default' AND project_id = '00000000-0000-4000-8000-000000000001'::uuid
   );
 
+-- landa-lite: fast smoke (shell + dropbear only)
 INSERT INTO templates (id, project_id, slug, name, backend, config)
 SELECT
   '00000000-0000-4000-8000-000000000011'::uuid,
   NULL,
   'firecracker-hello',
-  'Firecracker Alpine (default)',
+  'Landa lite (Alpine shell)',
   'firecracker',
-  '{"kernel":"assets/vmlinux.bin","rootfs":"assets/alpine-rootfs.ext4","memMiB":128,"note":"alpine+dropbear — target <2s cold create"}'::jsonb
+  '{"kernel":"assets/vmlinux.bin","rootfs":"assets/alpine-rootfs.ext4","memMiB":128,"note":"lite smoke — shell only"}'::jsonb
 WHERE
   NOT EXISTS (
     SELECT 1 FROM templates WHERE slug = 'firecracker-hello' AND project_id IS NULL
@@ -46,10 +47,24 @@ SELECT
   'landa-lite',
   'Landa lite Alpine',
   'firecracker',
-  '{"kernel":"assets/vmlinux.bin","rootfs":"assets/alpine-rootfs.ext4","memMiB":128,"note":"same alpine image — change rootfs path to swap"}'::jsonb
+  '{"kernel":"assets/vmlinux.bin","rootfs":"assets/alpine-rootfs.ext4","memMiB":128,"note":"lite smoke — shell only"}'::jsonb
 WHERE
   NOT EXISTS (
     SELECT 1 FROM templates WHERE slug = 'landa-lite' AND project_id IS NULL
+  );
+
+-- landa-agent: Grok / main-agent default (python3 + bash + jq, offline)
+INSERT INTO templates (id, project_id, slug, name, backend, config)
+SELECT
+  '00000000-0000-4000-8000-000000000014'::uuid,
+  NULL,
+  'landa-agent',
+  'Landa agent (Grok default)',
+  'firecracker',
+  '{"kernel":"assets/vmlinux.bin","rootfs":"assets/agent-rootfs.ext4","memMiB":256,"note":"offline python3+bash+jq — see docs/grok-seat-contract.md"}'::jsonb
+WHERE
+  NOT EXISTS (
+    SELECT 1 FROM templates WHERE slug = 'landa-agent' AND project_id IS NULL
   );
 
 -- docker demoted (optional; not registered by default)

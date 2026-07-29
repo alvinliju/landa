@@ -20,7 +20,20 @@ agent / MCP / CLI
 Unit of work: **Computer**  
 `create → exec / fs → world snapshot (JSON) → destroy`
 
-Contract details: **[docs/contract.md](./docs/contract.md)**
+Contract details: **[docs/contract.md](./docs/contract.md)** · Grok seats: **[docs/grok-seat-contract.md](./docs/grok-seat-contract.md)**
+
+### Firecracker images
+
+| Image | Script | Use |
+|-------|--------|-----|
+| `alpine-rootfs.ext4` | `scripts/build-alpine-rootfs.sh` | `landa-lite` smoke |
+| `agent-rootfs.ext4` | `scripts/build-agent-rootfs.sh` | **`landa-agent` (Grok default)** |
+
+```bash
+# on KVM host (alvin) as root:
+./scripts/build-alpine-rootfs.sh   # lite
+./scripts/build-agent-rootfs.sh    # python3 + bash + jq
+```
 
 ## quick start
 

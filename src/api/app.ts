@@ -186,14 +186,25 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
             typeof cfg.memMiB === "number" ? cfg.memMiB : undefined,
           vcpu: typeof cfg.vcpu === "number" ? cfg.vcpu : undefined,
         });
+        status = info.status;
+        err = info.error ?? null;
+        // agent image bakes /work; ensure dirs on every running seat
+        if (info.status === "running") {
+          try {
+            await plane.exec(info.id, {
+              cmd: "mkdir -p /work/in /work/out && chmod 755 /work /work/in /work/out",
+              timeoutMs: 10_000,
+            });
+          } catch {
+            /* lite image still fine */
+          }
+        }
         hostMeta = {
           computerId: info.id,
           endpoints: info.endpoints,
           seatStatus: info.status,
           createMs: info.spec.labels?.createMs,
         };
-        status = info.status;
-        err = info.error ?? null;
       } catch (e) {
         status = "error";
         err = String(e);

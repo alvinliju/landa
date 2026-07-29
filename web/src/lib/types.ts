@@ -33,6 +33,8 @@ export interface Sandbox {
     endpoints?: Record<string, string>;
     seatStatus?: string;
     note?: string;
+    createMs?: string;
+    error?: string;
   };
   created_at: string;
   started_at: string | null;

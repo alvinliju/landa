@@ -41,15 +41,25 @@ export function SandboxesPage({
   const [templates, setTemplates] = React.useState<Template[]>([]);
   const [open, setOpen] = React.useState(false);
   const [label, setLabel] = React.useState("");
-  const [template, setTemplate] = React.useState("memory-default");
+  const [template, setTemplate] = React.useState("landa-agent");
   const [busy, setBusy] = React.useState(false);
 
   const refresh = React.useCallback(async () => {
     const [s, t] = await Promise.all([api.sandboxes(), api.templates()]);
     setSandboxes(s.sandboxes);
     setTemplates(t.templates);
-    if (t.templates[0] && !t.templates.find((x) => x.slug === template)) {
-      setTemplate(t.templates[0].slug);
+    const preferred =
+      t.templates.find((x) => x.slug === "landa-agent") ??
+      t.templates.find((x) => x.slug === "landa-lite") ??
+      t.templates.find((x) => x.slug === template) ??
+      t.templates[0];
+    if (preferred && !t.templates.find((x) => x.slug === template)) {
+      setTemplate(preferred.slug);
+    } else if (preferred && template === "landa-agent" && preferred.slug !== "landa-agent") {
+      // landa-agent not seeded yet — fall back
+      if (!t.templates.find((x) => x.slug === "landa-agent")) {
+        setTemplate(preferred.slug);
+      }
     }
   }, [template]);
 

@@ -16,6 +16,23 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import type { ExecResult, Sandbox, WorldSnapshot } from "@/lib/types";
 
+/** Drop OpenSSH client noise from exec stderr (host keys, PQ warnings). */
+function cleanStderr(stderr: string): string {
+  return stderr
+    .split(/\r?\n/)
+    .filter((line) => {
+      const l = line.trim();
+      if (!l) return false;
+      if (l.startsWith("Warning: Permanently added")) return false;
+      if (l.includes("post-quantum key exchange")) return false;
+      if (l.includes("store now, decrypt later")) return false;
+      if (l.includes("The server may need to be upgraded")) return false;
+      if (l.startsWith("** WARNING:")) return false;
+      return true;
+    })
+    .join("\n");
+}
+
 export function SandboxDetailPage({
   id,
   onBack,
@@ -129,6 +146,11 @@ export function SandboxDetailPage({
             seat {sandbox.metadata.computerId}
           </span>
         ) : null}
+        {sandbox.metadata.createMs ? (
+          <span className="rounded-md border border-border/60 px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
+            create {sandbox.metadata.createMs}ms
+          </span>
+        ) : null}
       </div>
 
       <Card>
@@ -164,8 +186,10 @@ export function SandboxDetailPage({
                 {"\n"}
               </span>
               {result.stdout}
-              {result.stderr ? (
-                <span className="text-destructive">{result.stderr}</span>
+              {cleanStderr(result.stderr) ? (
+                <span className="text-destructive">
+                  {cleanStderr(result.stderr)}
+                </span>
               ) : null}
             </pre>
           ) : null}
