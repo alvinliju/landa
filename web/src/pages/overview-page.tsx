@@ -69,7 +69,7 @@ export function OverviewPage({
       <PageHeader
         eyebrow="Console"
         title="Overview"
-        description="Control plane for agent computers. Create seats, run commands, snapshot world state, then destroy."
+        description="Control plane for agent computers. Your VMs are scoped to your signed-in account."
         actions={
           <>
             <Button
@@ -83,7 +83,7 @@ export function OverviewPage({
             </Button>
             <Button size="sm" className="h-8 rounded-lg" onClick={onCreate}>
               <PlusIcon />
-              New sandbox
+              New VM
             </Button>
           </>
         }
@@ -125,10 +125,10 @@ export function OverviewPage({
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle className="text-base font-semibold">
-                Recent sandboxes
+                Your VMs
               </CardTitle>
               <CardDescription className="mt-1">
-                Live seats from your project. Click any row to open exec.
+                Machines owned by your account. Click any row to open exec.
               </CardDescription>
             </div>
             <Button
@@ -154,15 +154,15 @@ export function OverviewPage({
                 <EmptyMedia variant="icon">
                   <TerminalGlyph />
                 </EmptyMedia>
-                <EmptyTitle>No seats yet</EmptyTitle>
+                <EmptyTitle>No VMs yet</EmptyTitle>
                 <EmptyDescription>
                   Create a computer for your agent — Firecracker for real VMs,
-                  memory for quick smoke tests.
+                  memory for quick smoke tests. Ownership is tied to your user.
                 </EmptyDescription>
               </EmptyHeader>
               <Button size="sm" className="h-8 rounded-lg" onClick={onCreate}>
                 <PlusIcon />
-                Create sandbox
+                Create VM
               </Button>
             </Empty>
           ) : (

@@ -76,7 +76,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
         template,
         label: label.trim() || undefined,
       });
-      toast.success("Sandbox created");
+      toast.success("VM created");
       setOpen(false);
       setLabel("");
       await refresh();
@@ -92,7 +92,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
     e.stopPropagation();
     try {
       await api.destroySandbox(id);
-      toast.success("Sandbox destroyed");
+      toast.success("VM destroyed");
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Destroy failed");
@@ -102,9 +102,9 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
   return (
     <PageContainer className="flex flex-col gap-7">
       <PageHeader
-        eyebrow="Seats"
-        title="Sandboxes"
-        description="Computers your agents attach to. Create → exec → snapshot → destroy."
+        eyebrow="Your machines"
+        title="VMs"
+        description="Agent computers owned by your account. Create → exec → snapshot → destroy."
         actions={
           <>
             <Button
@@ -134,11 +134,11 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
             <EmptyMedia variant="icon">
               <TerminalSquareIcon />
             </EmptyMedia>
-            <EmptyTitle>No seats yet</EmptyTitle>
+            <EmptyTitle>No VMs yet</EmptyTitle>
             <EmptyDescription>
               Spin up a computer for your agent. Prefer{" "}
               <span className="font-mono text-foreground/80">landa-agent</span>{" "}
-              for a full offline toolkit.
+              for a full offline toolkit. Each VM is tied to your user.
             </EmptyDescription>
           </EmptyHeader>
           <Button
@@ -147,7 +147,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
             onClick={() => setOpen(true)}
           >
             <PlusIcon />
-            Create sandbox
+            Create VM
           </Button>
         </Empty>
       ) : (
@@ -214,9 +214,9 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
           <DialogHeader className="border-b border-border/60 px-6 py-5">
-            <DialogTitle className="text-base">Create sandbox</DialogTitle>
+            <DialogTitle className="text-base">Create VM</DialogTitle>
             <DialogDescription>
-              Spawns a seat via the control plane. Template selects the image
+              Spawns a machine owned by your account. Template selects the image
               and backend.
             </DialogDescription>
           </DialogHeader>
@@ -283,7 +283,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
               className="h-8 rounded-lg"
               onClick={() => void create()}
             >
-              {busy ? "Creating…" : "Create sandbox"}
+              {busy ? "Creating…" : "Create VM"}
             </Button>
           </DialogFooter>
         </DialogContent>

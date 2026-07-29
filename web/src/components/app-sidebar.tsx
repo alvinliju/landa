@@ -10,6 +10,10 @@ import {
   AppSidebarShell,
 } from "@/components/app-sidebar-shell";
 import { LandaMark } from "@/components/landa-mark";
+import {
+  SidebarProfile,
+  type SidebarUserInfo,
+} from "@/components/sidebar-user";
 import { ThemeDropdown } from "@/components/theme-dropdown";
 import {
   SidebarContent,
@@ -26,7 +30,7 @@ import type { LandaPage } from "@/lib/navigation";
 
 const nav = [
   { id: "overview" as const, title: "Overview", icon: LayoutDashboardIcon },
-  { id: "sandboxes" as const, title: "Sandboxes", icon: TerminalSquareIcon },
+  { id: "sandboxes" as const, title: "VMs", icon: TerminalSquareIcon },
   { id: "templates" as const, title: "Templates", icon: BoxesIcon },
   { id: "settings" as const, title: "Settings", icon: SettingsIcon },
 ];
@@ -35,11 +39,15 @@ export function AppSidebar({
   page,
   navigate,
   projectSlug,
+  user,
+  onSignOut,
   ...props
 }: React.ComponentProps<typeof AppSidebarShell> & {
   page: LandaPage;
   navigate: (page: Exclude<LandaPage, "sandbox">) => void;
   projectSlug?: string;
+  user?: SidebarUserInfo;
+  onSignOut: () => void;
 }) {
   return (
     <AppSidebarShell {...props}>
@@ -84,22 +92,17 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarSeparator />
-      <SidebarFooter className="gap-2">
-        <div className="rounded-lg bg-muted/50 px-2.5 py-2 ring-1 ring-border/50">
-          <div className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
-            Free tier
-          </div>
-          <div className="mt-0.5 text-xs text-foreground/90">
-            8h seat TTL · concurrent limits
-          </div>
-        </div>
-        <div className="flex items-center justify-between gap-2 px-0.5">
-          <span className="truncate text-[0.65rem] text-muted-foreground">
-            Theme
-          </span>
-          <ThemeDropdown />
-        </div>
+
+      {/* Stacked: theme, then profile — always at bottom of sidepanel */}
+      <SidebarFooter className="gap-1.5">
+        <SidebarSeparator className="mx-0" />
+        <ThemeDropdown />
+        <SidebarProfile
+          user={user ?? {}}
+          projectSlug={projectSlug}
+          onOpenSettings={() => navigate("settings")}
+          onSignOut={onSignOut}
+        />
       </SidebarFooter>
     </AppSidebarShell>
   );

@@ -118,7 +118,7 @@ export function SandboxDetailPage({
   return (
     <PageContainer className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Sandbox"
+        eyebrow={sandbox.user_id ? "Your VM" : "VM"}
         title={sandbox.label || sandbox.id.slice(0, 8)}
         description={
           <span className="font-mono text-[0.75rem] text-muted-foreground">

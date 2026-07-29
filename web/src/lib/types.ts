@@ -40,6 +40,26 @@ export interface Sandbox {
   started_at: string | null;
   expires_at: string | null;
   error: string | null;
+  /** set when listed via identity-scoped VMs join */
+  vm_id?: string;
+  user_id?: string;
+  template_slug?: string;
+}
+
+export interface Vm {
+  id: string;
+  sandbox_id: string;
+  user_id: string;
+  label: string;
+  status: SandboxStatus;
+  backend: string;
+  template_slug: string;
+  metadata: Sandbox["metadata"];
+  created_at: string;
+  started_at: string | null;
+  expires_at: string | null;
+  error: string | null;
+  guest_ip?: string | null;
 }
 
 export interface ExecResult {

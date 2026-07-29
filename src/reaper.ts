@@ -52,6 +52,13 @@ export async function reapExpiredSandboxes(
           AND status != 'destroyed'
       `;
       await db`
+        UPDATE vms
+        SET status = 'destroyed', stopped_at = now(),
+            error = COALESCE(NULLIF(error, ''), 'ttl expired')
+        WHERE sandbox_id = ${row.id}::uuid
+          AND status != 'destroyed'
+      `;
+      await db`
         INSERT INTO audit_events (project_id, sandbox_id, action, detail)
         SELECT project_id, id, 'sandbox.ttl_reap',
           ${db.json({ expires_at: row.expires_at, backend: row.backend })}

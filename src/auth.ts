@@ -56,12 +56,24 @@ export async function resolveApiKey(
   await db`
     UPDATE api_keys SET last_used_at = now() WHERE id = ${row.api_key_id}::uuid
   `;
+  // tie key traffic to project owner when present
+  const owners = await db<{ owner_user_id: string | null; email: string | null; name: string | null }[]>`
+    SELECT p.owner_user_id, u.email, u.name
+    FROM projects p
+    LEFT JOIN "user" u ON u.id = p.owner_user_id
+    WHERE p.id = ${row.project_id}::uuid
+    LIMIT 1
+  `;
+  const owner = owners[0];
   return {
     projectId: row.project_id,
     slug: row.slug,
     maxConcurrent: row.max_concurrent,
     maxSessionSec: row.max_session_sec,
     apiKeyId: row.api_key_id,
+    userId: owner?.owner_user_id ?? undefined,
+    userEmail: owner?.email ?? undefined,
+    userName: owner?.name ?? undefined,
     via: "api_key",
   };
 }

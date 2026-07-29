@@ -36,7 +36,11 @@ export default function App() {
   const [authed, setAuthed] = React.useState(false);
   const [project, setProject] = React.useState<Project | null>(null);
   const [backends, setBackends] = React.useState<string[]>([]);
-  const [userLabel, setUserLabel] = React.useState<string>("");
+  const [user, setUser] = React.useState<{
+    id?: string;
+    email?: string;
+    name?: string;
+  } | null>(null);
   const [route, setRoute] = React.useState(() =>
     pageFromPath(location.pathname),
   );
@@ -46,11 +50,12 @@ export default function App() {
       const me = await api.me();
       setProject(me.project);
       setBackends(me.backends ?? []);
-      setUserLabel(me.user?.email || me.user?.name || me.project.slug);
+      setUser(me.user ?? null);
       setAuthed(true);
     } catch {
       setAuthed(false);
       setProject(null);
+      setUser(null);
     } finally {
       setReady(true);
     }
@@ -85,6 +90,7 @@ export default function App() {
     setApiKey(null);
     setAuthed(false);
     setProject(null);
+    setUser(null);
   }
 
   if (!ready) {
@@ -107,12 +113,16 @@ export default function App() {
     );
   }
 
+  const userLabel = user?.email || user?.name || project.slug;
+
   return (
     <SidebarProvider>
       <AppSidebar
         page={route.page}
         navigate={navigate}
         projectSlug={project.slug}
+        user={user ?? {}}
+        onSignOut={() => void handleSignOut()}
       />
       <SidebarInset className="bg-background">
         <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border/70 bg-background/80 px-4 backdrop-blur-xl">

@@ -1,11 +1,52 @@
 import { Hono } from "hono";
-import type { AppEnv } from "../auth.js";
+import type { AppEnv, AuthProject } from "../auth.js";
 import { requireAuth } from "../auth.js";
 import { sql } from "../db.js";
 import { ControlPlane, landaErrorToHttp } from "../control-plane.js";
 import { createMemoryPlane } from "../plane.js";
 import type { BackendName } from "../types.js";
 import { auth } from "../better-auth.js";
+
+type Sql = ReturnType<typeof sql>;
+
+type OwnedSandboxRow = {
+  id: string;
+  status: string;
+  backend: string;
+  metadata: { computerId?: string };
+};
+
+/** Resolve sandbox only if the caller owns it (vms.user_id) or project when no user. */
+async function loadOwnedSandbox(
+  db: Sql,
+  auth: AuthProject,
+  sandboxId: string,
+): Promise<
+  | { ok: true; row: OwnedSandboxRow }
+  | { ok: false; status: number; body: Record<string, unknown> }
+> {
+  if (auth.userId) {
+    const rows = await db<OwnedSandboxRow[]>`
+      SELECT s.id, s.status, s.backend, s.metadata
+      FROM sandboxes s
+      JOIN vms v ON v.sandbox_id = s.id
+      WHERE s.id = ${sandboxId}::uuid
+        AND v.user_id = ${auth.userId}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return { ok: false, status: 404, body: { error: "not found" } };
+    return { ok: true, row };
+  }
+  const rows = await db<OwnedSandboxRow[]>`
+    SELECT id, status, backend, metadata FROM sandboxes
+    WHERE id = ${sandboxId}::uuid AND project_id = ${auth.projectId}::uuid
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return { ok: false, status: 404, body: { error: "not found" } };
+  return { ok: true, row };
+}
 
 /**
  * control plane HTTP — E2B-shaped surfaces, our seats
@@ -69,6 +110,15 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
 
   app.get("/v1/me", requireAuth, async (c) => {
     const a = c.get("auth");
+    let vmCount = 0;
+    if (a.userId) {
+      const rows = await sql()`
+        SELECT count(*)::text AS n FROM vms
+        WHERE user_id = ${a.userId}
+          AND status IN ('creating', 'running', 'paused')
+      `;
+      vmCount = Number((rows[0] as { n: string } | undefined)?.n ?? 0);
+    }
     return c.json({
       project: {
         id: a.projectId,
@@ -85,6 +135,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         : null,
       via: a.via,
       backends: plane.backends(),
+      vms: { active: vmCount, maxConcurrent: a.maxConcurrent },
     });
   });
 
@@ -103,8 +154,63 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     return c.json({ templates: rows });
   });
 
+  /** User-owned VMs (identity table). Preferred list for the console. */
+  app.get("/v1/vms", requireAuth, async (c) => {
+    const auth = c.get("auth");
+    if (!auth.userId) {
+      return c.json({ error: "user identity required", vms: [] }, 400);
+    }
+    const rows = await sql()`
+      SELECT
+        v.id,
+        v.sandbox_id,
+        v.user_id,
+        v.label,
+        v.status,
+        v.backend,
+        v.template_slug,
+        v.metadata,
+        v.created_at,
+        v.started_at,
+        v.expires_at,
+        v.error,
+        s.guest_ip
+      FROM vms v
+      JOIN sandboxes s ON s.id = v.sandbox_id
+      WHERE v.user_id = ${auth.userId}
+        AND v.status != 'destroyed'
+      ORDER BY v.created_at DESC
+    `;
+    return c.json({ vms: rows });
+  });
+
   app.get("/v1/sandboxes", requireAuth, async (c) => {
     const auth = c.get("auth");
+    // prefer identity-scoped VMs when we know the user
+    if (auth.userId) {
+      const rows = await sql()`
+        SELECT
+          s.id,
+          s.label,
+          s.status,
+          s.backend,
+          s.guest_ip,
+          s.metadata,
+          s.created_at,
+          s.started_at,
+          s.expires_at,
+          s.error,
+          v.id AS vm_id,
+          v.user_id,
+          v.template_slug
+        FROM vms v
+        JOIN sandboxes s ON s.id = v.sandbox_id
+        WHERE v.user_id = ${auth.userId}
+          AND s.status != 'destroyed'
+        ORDER BY s.created_at DESC
+      `;
+      return c.json({ sandboxes: rows });
+    }
     const rows = await sql()`
       SELECT id, label, status, backend, guest_ip, metadata, created_at, started_at, expires_at, error
       FROM sandboxes
@@ -117,6 +223,15 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
 
   app.post("/v1/sandboxes", requireAuth, async (c) => {
     const auth = c.get("auth");
+    if (!auth.userId) {
+      return c.json(
+        {
+          error: "user identity required",
+          hint: "sign in so VMs can be tied to your account",
+        },
+        401,
+      );
+    }
     const body = (await c.req.json().catch(() => ({}))) as {
       template?: string;
       label?: string;
@@ -127,9 +242,10 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const label = body.label ?? "";
     const db = sql();
 
+    // concurrent limit is per user (vms table)
     const countRows = await db<{ n: string }[]>`
-      SELECT count(*)::text AS n FROM sandboxes
-      WHERE project_id = ${auth.projectId}::uuid
+      SELECT count(*)::text AS n FROM vms
+      WHERE user_id = ${auth.userId}
         AND status IN ('creating', 'running', 'paused')
     `;
     const n = Number(countRows[0]?.n ?? 0);
@@ -264,22 +380,80 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     `;
     const row = rows[0]!;
 
+    // identity ownership row
+    const vmRows = await db`
+      INSERT INTO vms (
+        user_id, project_id, sandbox_id, label, status, backend,
+        template_slug, metadata, error, started_at, expires_at
+      )
+      VALUES (
+        ${auth.userId},
+        ${auth.projectId}::uuid,
+        ${(row as { id: string }).id}::uuid,
+        ${label},
+        ${status},
+        ${tmpl.backend},
+        ${templateSlug},
+        ${db.json(JSON.parse(JSON.stringify(hostMeta)))},
+        ${err},
+        ${status === "running" ? db`now()` : null},
+        ${expires.toISOString()}
+      )
+      RETURNING id, user_id, sandbox_id
+    `;
+    const vm = vmRows[0] as { id: string; user_id: string; sandbox_id: string };
+
     await db`
       INSERT INTO audit_events (project_id, sandbox_id, action, detail)
       VALUES (
         ${auth.projectId}::uuid,
-        ${row.id as string}::uuid,
+        ${(row as { id: string }).id}::uuid,
         'sandbox.create',
-        ${db.json({ template: templateSlug, backend: tmpl.backend })}
+        ${db.json({
+          template: templateSlug,
+          backend: tmpl.backend,
+          user_id: auth.userId,
+          vm_id: vm.id,
+        })}
       )
     `;
 
-    return c.json({ sandbox: row }, 201);
+    return c.json(
+      {
+        sandbox: {
+          ...row,
+          vm_id: vm.id,
+          user_id: auth.userId,
+          template_slug: templateSlug,
+        },
+        vm: {
+          id: vm.id,
+          user_id: vm.user_id,
+          sandbox_id: vm.sandbox_id,
+        },
+      },
+      201,
+    );
   });
 
   app.get("/v1/sandboxes/:id", requireAuth, async (c) => {
     const auth = c.get("auth");
     const id = c.req.param("id") as string;
+    if (auth.userId) {
+      const rows = await sql()`
+        SELECT
+          s.id, s.label, s.status, s.backend, s.guest_ip, s.metadata,
+          s.created_at, s.started_at, s.expires_at, s.error,
+          v.id AS vm_id, v.user_id, v.template_slug
+        FROM sandboxes s
+        JOIN vms v ON v.sandbox_id = s.id
+        WHERE s.id = ${id}::uuid AND v.user_id = ${auth.userId}
+        LIMIT 1
+      `;
+      const row = rows[0];
+      if (!row) return c.json({ error: "not found" }, 404);
+      return c.json({ sandbox: row });
+    }
     const rows = await sql()`
       SELECT id, label, status, backend, guest_ip, metadata, created_at, started_at, expires_at, error
       FROM sandboxes
@@ -295,18 +469,9 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const auth = c.get("auth");
     const id = c.req.param("id") as string;
     const db = sql();
-    const rows = await db<{
-      id: string;
-      status: string;
-      backend: string;
-      metadata: { computerId?: string };
-    }[]>`
-      SELECT id, status, backend, metadata FROM sandboxes
-      WHERE id = ${id}::uuid AND project_id = ${auth.projectId}::uuid
-      LIMIT 1
-    `;
-    const row = rows[0];
-    if (!row) return c.json({ error: "not found" }, 404);
+    const owned = await loadOwnedSandbox(db, auth, id);
+    if (!owned.ok) return c.json(owned.body, owned.status as 400);
+    const row = owned.row;
 
     if (row.metadata?.computerId) {
       await plane.destroy(row.metadata.computerId).catch(() => undefined);
@@ -318,6 +483,11 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       WHERE id = ${id}::uuid
       RETURNING id, status, stopped_at
     `;
+    await db`
+      UPDATE vms
+      SET status = 'destroyed', stopped_at = now()
+      WHERE sandbox_id = ${id}::uuid
+    `;
 
     await db`
       INSERT INTO audit_events (project_id, sandbox_id, action, detail)
@@ -325,7 +495,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         ${auth.projectId}::uuid,
         ${id}::uuid,
         'sandbox.destroy',
-        ${db.json({})}
+        ${db.json({ user_id: auth.userId ?? null })}
       )
     `;
 
@@ -339,17 +509,9 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     if (!body.cmd) return c.json({ error: "cmd required" }, 400);
     const db = sql();
 
-    const rows = await db<{
-      id: string;
-      status: string;
-      backend: string;
-      metadata: { computerId?: string };
-    }[]>`
-      SELECT id, status, backend, metadata FROM sandboxes
-      WHERE id = ${id}::uuid AND project_id = ${auth.projectId}::uuid
-      LIMIT 1
-    `;
-    const row = rows[0];
+    const owned = await loadOwnedSandbox(db, auth, id);
+    if (!owned.ok) return c.json(owned.body, owned.status as 400);
+    const row = owned.row;
     if (!row) return c.json({ error: "not found" }, 404);
     if (row.status !== "running") {
       return c.json({ error: "sandbox not running", status: row.status }, 409);
@@ -388,16 +550,9 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const auth = c.get("auth");
     const id = c.req.param("id") as string;
     const db = sql();
-    const rows = await db<{
-      status: string;
-      metadata: { computerId?: string };
-    }[]>`
-      SELECT status, metadata FROM sandboxes
-      WHERE id = ${id}::uuid AND project_id = ${auth.projectId}::uuid
-      LIMIT 1
-    `;
-    const row = rows[0];
-    if (!row) return c.json({ error: "not found" }, 404);
+    const owned = await loadOwnedSandbox(db, auth, id);
+    if (!owned.ok) return c.json(owned.body, owned.status as 400);
+    const row = owned.row;
     if (row.status !== "running" || !row.metadata?.computerId) {
       return c.json({ error: "no live seat" }, 409);
     }
@@ -417,7 +572,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     if (!body.path || body.content === undefined) {
       return c.json({ error: "path and content required" }, 400);
     }
-    const computerId = await liveComputerId(auth.projectId, id);
+    const computerId = await liveComputerId(auth, id);
     if (!computerId.ok) return c.json(computerId.body, computerId.status as 400);
     try {
       await plane.writeFile(computerId.id, {
@@ -436,7 +591,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const id = c.req.param("id") as string;
     const path = c.req.query("path") ?? ".";
     const mode = c.req.query("mode") ?? "list"; // list | read
-    const computerId = await liveComputerId(auth.projectId, id);
+    const computerId = await liveComputerId(auth, id);
     if (!computerId.ok) return c.json(computerId.body, computerId.status as 400);
     try {
       if (mode === "read") {
@@ -452,23 +607,15 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
   });
 
   async function liveComputerId(
-    projectId: string,
+    auth: AuthProject,
     sandboxId: string,
   ): Promise<
     | { ok: true; id: string }
     | { ok: false; status: number; body: Record<string, unknown> }
   > {
-    const db = sql();
-    const rows = await db<{
-      status: string;
-      metadata: { computerId?: string };
-    }[]>`
-      SELECT status, metadata FROM sandboxes
-      WHERE id = ${sandboxId}::uuid AND project_id = ${projectId}::uuid
-      LIMIT 1
-    `;
-    const row = rows[0];
-    if (!row) return { ok: false, status: 404, body: { error: "not found" } };
+    const owned = await loadOwnedSandbox(sql(), auth, sandboxId);
+    if (!owned.ok) return owned;
+    const row = owned.row;
     if (row.status !== "running" || !row.metadata?.computerId) {
       return { ok: false, status: 409, body: { error: "no live seat" } };
     }

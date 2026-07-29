@@ -101,6 +101,7 @@ export type MeResponse = {
   backends: string[];
   via?: "session" | "api_key";
   user?: { id: string; email?: string; name?: string } | null;
+  vms?: { active: number; maxConcurrent: number };
 };
 
 export const api = {
@@ -109,6 +110,8 @@ export const api = {
   backends: () => request<{ backends: string[] }>("/v1/backends"),
   templates: () => request<{ templates: Template[] }>("/v1/templates"),
   sandboxes: () => request<{ sandboxes: Sandbox[] }>("/v1/sandboxes"),
+  vms: () =>
+    request<{ vms: import("./types").Vm[] }>("/v1/vms"),
   sandbox: (id: string) =>
     request<{ sandbox: Sandbox }>(`/v1/sandboxes/${id}`),
   createSandbox: (body: {
@@ -116,7 +119,10 @@ export const api = {
     label?: string;
     ttlSec?: number;
   }) =>
-    request<{ sandbox: Sandbox }>("/v1/sandboxes", {
+    request<{
+      sandbox: Sandbox;
+      vm?: { id: string; user_id: string; sandbox_id: string };
+    }>("/v1/sandboxes", {
       method: "POST",
       body: JSON.stringify(body),
     }),

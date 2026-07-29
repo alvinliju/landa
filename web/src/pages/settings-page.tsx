@@ -58,7 +58,14 @@ export function SettingsPage({ onSignOut }: { onSignOut: () => void }) {
               <dl className="grid gap-3 text-sm">
                 <Row label="Email" value={me.user?.email || "—"} />
                 <Row label="Name" value={me.user?.name || "—"} />
+                <Row label="User ID" value={me.user?.id || "—"} mono />
                 <Row label="Auth" value={me.via || "session"} mono />
+                {me.vms ? (
+                  <Row
+                    label="Active VMs"
+                    value={`${me.vms.active} / ${me.vms.maxConcurrent}`}
+                  />
+                ) : null}
               </dl>
             )}
           </CardContent>

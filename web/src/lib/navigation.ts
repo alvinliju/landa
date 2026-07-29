@@ -14,8 +14,8 @@ export const pagePaths: Record<Exclude<LandaPage, "sandbox">, string> = {
 
 export const pageTitles: Record<LandaPage, string> = {
   overview: "Overview",
-  sandboxes: "Sandboxes",
-  sandbox: "Sandbox",
+  sandboxes: "VMs",
+  sandbox: "VM",
   templates: "Templates",
   settings: "Settings",
 };
