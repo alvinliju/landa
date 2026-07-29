@@ -105,8 +105,8 @@ export async function provisionUserProject(
   const prefix = raw.slice(0, 12);
   const keyHash = createHash("sha256").update(raw).digest("hex");
   await db`
-    INSERT INTO api_keys (project_id, label, key_prefix, key_hash)
-    VALUES (${projectId}::uuid, 'dashboard', ${prefix}, ${keyHash})
+    INSERT INTO api_keys (project_id, user_id, label, key_prefix, key_hash)
+    VALUES (${projectId}::uuid, ${userId}, 'dashboard', ${prefix}, ${keyHash})
   `;
   console.log(`[auth] provisioned project ${slug} for ${email}`);
 }

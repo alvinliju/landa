@@ -144,7 +144,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
   app.get("/v1/api-keys", requireAuth, async (c) => {
     const a = c.get("auth");
     const rows = await sql()`
-      SELECT id, label, key_prefix, last_used_at, created_at, revoked_at
+      SELECT id, user_id, label, key_prefix, last_used_at, created_at, revoked_at
       FROM api_keys
       WHERE project_id = ${a.projectId}::uuid
       ORDER BY created_at DESC
@@ -152,6 +152,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     return c.json({
       keys: rows.map((k) => ({
         id: k.id,
+        userId: k.user_id,
         label: k.label,
         prefix: k.key_prefix,
         lastUsedAt: k.last_used_at,
@@ -174,13 +175,29 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     const prefix = raw.slice(0, 12);
     const keyHash = hashApiKey(raw);
     const db = sql();
+    if (!a.userId) {
+      return c.json(
+        {
+          error: "user identity required",
+          hint: "sign in so API keys are owned by your account",
+        },
+        401,
+      );
+    }
     const rows = await db`
-      INSERT INTO api_keys (project_id, label, key_prefix, key_hash)
-      VALUES (${a.projectId}::uuid, ${label}, ${prefix}, ${keyHash})
-      RETURNING id, label, key_prefix, created_at
+      INSERT INTO api_keys (project_id, user_id, label, key_prefix, key_hash)
+      VALUES (
+        ${a.projectId}::uuid,
+        ${a.userId},
+        ${label},
+        ${prefix},
+        ${keyHash}
+      )
+      RETURNING id, user_id, label, key_prefix, created_at
     `;
     const row = rows[0] as {
       id: string;
+      user_id: string;
       label: string;
       key_prefix: string;
       created_at: string;
@@ -190,7 +207,12 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       VALUES (
         ${a.projectId}::uuid,
         'api_key.create',
-        ${db.json({ key_id: row.id, label, prefix })}
+        ${db.json({
+          key_id: row.id,
+          user_id: a.userId,
+          label,
+          prefix,
+        })}
       )
     `;
     return c.json(
@@ -198,6 +220,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         key: raw,
         apiKey: {
           id: row.id,
+          userId: row.user_id,
           label: row.label,
           prefix: row.key_prefix,
           createdAt: row.created_at,
@@ -488,14 +511,16 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
     `;
     const row = rows[0]!;
 
-    // identity ownership row
+    // identity ownership: user_id always; api_key_id when created via Bearer key
+    const apiKeyId = auth.apiKeyId ?? null;
     const vmRows = await db`
       INSERT INTO vms (
-        user_id, project_id, sandbox_id, label, status, backend,
+        user_id, api_key_id, project_id, sandbox_id, label, status, backend,
         template_slug, metadata, error, started_at, expires_at
       )
       VALUES (
         ${auth.userId},
+        ${apiKeyId},
         ${auth.projectId}::uuid,
         ${(row as { id: string }).id}::uuid,
         ${label},
@@ -507,9 +532,14 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         ${status === "running" ? db`now()` : null},
         ${expires.toISOString()}
       )
-      RETURNING id, user_id, sandbox_id
+      RETURNING id, user_id, api_key_id, sandbox_id
     `;
-    const vm = vmRows[0] as { id: string; user_id: string; sandbox_id: string };
+    const vm = vmRows[0] as {
+      id: string;
+      user_id: string;
+      api_key_id: string | null;
+      sandbox_id: string;
+    };
 
     await db`
       INSERT INTO audit_events (project_id, sandbox_id, action, detail)
@@ -521,7 +551,9 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
           template: templateSlug,
           backend: tmpl.backend,
           user_id: auth.userId,
+          api_key_id: apiKeyId,
           vm_id: vm.id,
+          via: auth.via,
         })}
       )
     `;
@@ -532,11 +564,13 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
           ...row,
           vm_id: vm.id,
           user_id: auth.userId,
+          api_key_id: vm.api_key_id,
           template_slug: templateSlug,
         },
         vm: {
           id: vm.id,
           user_id: vm.user_id,
+          api_key_id: vm.api_key_id,
           sandbox_id: vm.sandbox_id,
         },
       },

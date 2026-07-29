@@ -47,8 +47,9 @@ Templates: **`landa-agent` only** (more coming soon). See **`docs/SKILL.md`**.
 | E2B | landa |
 |-----|--------|
 | Project | `projects` row |
-| API Keys | `api_keys` (hashed) |
+| API Keys | `api_keys` (hashed; `user_id` + `project_id`) |
 | Sandboxes | `sandboxes` + backend seat |
+| VMs | `vms` (`user_id` FK, optional `api_key_id` FK when created via key) |
 | Templates | `templates` |
 | Usage / Limits | `max_concurrent`, `expires_at` (TTL; reaper destroys after expiry, default 8h) |
 | Webhooks / Billing | later |
