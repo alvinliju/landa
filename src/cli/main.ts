@@ -29,6 +29,7 @@ import {
   parseCloudSyncFlag,
   pullToMirror,
   pushFromMirror,
+  startCloudWatch,
   writeCloudMarker,
 } from "./cloud-sync.js";
 import { runLogin } from "./login.js";
@@ -73,6 +74,7 @@ Cloud sync (workspaces on landa):
   landa t3 --new myapp               # create new cloud workspace
   landa sync pull -r <id>            # cloud → local mirror
   landa sync push -r <id>            # local mirror → cloud
+  landa sync watch -r <id>           # auto push/pull (also runs under landa t3)
 
 Config:
   landa config show
@@ -354,7 +356,7 @@ async function main() {
   }
 
   if (cmd === "sync") {
-    const sub = args[0]; // pull | push
+    const sub = args[0]; // pull | push | watch
     const client = await clientFrom(g);
     const id = (
       await client.resolveSession(needSession(g, args[1]))
@@ -381,7 +383,22 @@ async function main() {
       console.log(`ok: ${r.files} files (${r.skipped} skipped)`);
       return;
     }
-    throw new Error("usage: landa sync pull|push -r <session>");
+    if (sub === "watch") {
+      console.log(`auto-sync mirror ↔ landa  (${session.name})`);
+      console.log(`  mirror ${mirror}`);
+      console.log(`  Ctrl+C to stop (final push)`);
+      const w = startCloudWatch(client, id, mirror);
+      await new Promise<void>((resolve) => {
+        process.once("SIGINT", () => {
+          void w.stop().then(() => resolve());
+        });
+        process.once("SIGTERM", () => {
+          void w.stop().then(() => resolve());
+        });
+      });
+      return;
+    }
+    throw new Error("usage: landa sync pull|push|watch -r <session>");
   }
 
   const client = await clientFrom(g);

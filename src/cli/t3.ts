@@ -11,6 +11,7 @@ import {
   ensureLocalMirror,
   isCloudSyncOn,
   pullToMirror,
+  startCloudWatch,
   writeCloudMarker,
 } from "./cloud-sync.js";
 import { ensureLoggedIn } from "./login.js";
@@ -195,22 +196,52 @@ export async function runT3(opts: T3Opts = {}): Promise<void> {
 
   if (opts.noLaunch === true || opts.launch === false) {
     console.log("skipping T3 launch (--no-launch).");
+    if (cloud && sessionId && mirrorPath) {
+      console.log("auto-sync not started (no T3). Run without --no-launch, or:");
+      console.log(`  landa sync watch -r ${sessionId}`);
+    }
     return;
   }
 
+  // Auto-sync while T3 runs (mirror ↔ landa volume)
+  let watch: { stop: () => Promise<void> } | null = null;
+  if (cloud && sessionId && mirrorPath) {
+    console.log("→ auto-sync ON (saves push to landa; periodic pull)");
+    watch = startCloudWatch(client, sessionId, mirrorPath);
+  }
+
+  const shutdown = async () => {
+    if (watch) {
+      await watch.stop();
+      watch = null;
+    }
+  };
+  process.once("SIGINT", () => {
+    void shutdown().finally(() => process.exit(0));
+  });
+  process.once("SIGTERM", () => {
+    void shutdown().finally(() => process.exit(0));
+  });
+
   console.log("→ starting T3 Code (bundled)…");
   if (cloud && mirrorPath) {
-    console.log("  project cwd = cloud mirror (not ~/Documents/landa)");
+    console.log("  project = cloud workspace mirror");
+    console.log("  edits auto-push to landa volume (host-first truth)");
+    console.log(`  console  ${base}/sessions/${sessionId}`);
   }
-  console.log("  Ctrl+C stops T3 (cloud session stays).");
+  console.log("  Ctrl+C stops T3 + final sync (cloud session stays).");
   console.log("");
 
-  await launchT3({
-    base,
-    key,
-    sessionId,
-    sessionName: sessionName || undefined,
-    mode: opts.mode ?? "start",
-    workspaceCwd: cloud ? mirrorPath : undefined,
-  });
+  try {
+    await launchT3({
+      base,
+      key,
+      sessionId,
+      sessionName: sessionName || undefined,
+      mode: opts.mode ?? "start",
+      workspaceCwd: cloud ? mirrorPath : undefined,
+    });
+  } finally {
+    await shutdown();
+  }
 }

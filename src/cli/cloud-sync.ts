@@ -1,7 +1,9 @@
 /**
  * Cloud sync: landa session volume is the workspace home.
  * Local mirror under ~/.cache/landa/workspaces/<sessionId>/ for T3/agents on laptop.
+ * Auto-watch keeps mirror ↔ volume aligned while T3 runs.
  */
+import { watch, type FSWatcher } from "node:fs";
 import {
   mkdir,
   readFile,
@@ -23,6 +25,7 @@ const SKIP_DIRS = new Set([
   ".next",
   "t3",
   ".pnpm-store",
+  ".landa", // avoid thrashing marker files (we still push marker explicitly)
 ]);
 
 export function isCloudSyncOn(
@@ -32,7 +35,9 @@ export function isCloudSyncOn(
   const e = env.LANDA_CLOUD_SYNC?.trim().toLowerCase();
   if (e === "1" || e === "true" || e === "on" || e === "yes") return true;
   if (e === "0" || e === "false" || e === "off" || e === "no") return false;
-  return cfg.cloudSync === true;
+  // default ON — cloud is the product default
+  if (cfg.cloudSync === false) return false;
+  return true;
 }
 
 export function parseCloudSyncFlag(raw: string): boolean {
@@ -260,4 +265,124 @@ export async function ensureCloudSession(
 
 export function relUnder(root: string, file: string): string {
   return relative(resolve(root), resolve(file));
+}
+
+export type WatchHandle = {
+  stop: () => Promise<void>;
+};
+
+/**
+ * Watch local mirror; debounced push to landa + periodic pull.
+ * Call stop() on T3 exit for a final push.
+ */
+export function startCloudWatch(
+  client: LandaClient,
+  sessionId: string,
+  localRoot: string,
+  opts?: {
+    debounceMs?: number;
+    pullEveryMs?: number;
+    quiet?: boolean;
+  },
+): WatchHandle {
+  const debounceMs = opts?.debounceMs ?? 2000;
+  const pullEveryMs = opts?.pullEveryMs ?? 45_000;
+  const log = (msg: string) => {
+    if (!opts?.quiet) {
+      const t = new Date().toISOString().slice(11, 19);
+      console.log(`[sync ${t}] ${msg}`);
+    }
+  };
+
+  let stopped = false;
+  let pushTimer: ReturnType<typeof setTimeout> | null = null;
+  let pushing = false;
+  let pending = false;
+  let watchers: FSWatcher[] = [];
+
+  const schedulePush = () => {
+    if (stopped) return;
+    pending = true;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => {
+      void doPush();
+    }, debounceMs);
+  };
+
+  const doPush = async () => {
+    if (stopped || pushing) return;
+    if (!pending) return;
+    pending = false;
+    pushing = true;
+    try {
+      const r = await pushFromMirror(client, sessionId, localRoot);
+      log(`push → cloud  ${r.files} files (${r.skipped} skipped)`);
+    } catch (e) {
+      log(`push error: ${e instanceof Error ? e.message : e}`);
+      pending = true; // retry
+    } finally {
+      pushing = false;
+      if (pending && !stopped) schedulePush();
+    }
+  };
+
+  const doPull = async () => {
+    if (stopped) return;
+    try {
+      const r = await pullToMirror(client, sessionId, localRoot);
+      if (r.files > 0) log(`pull ← cloud  ${r.files} files`);
+    } catch (e) {
+      log(`pull error: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  try {
+    const w = watch(
+      localRoot,
+      { recursive: true },
+      (_event, filename) => {
+        if (!filename) {
+          schedulePush();
+          return;
+        }
+        const parts = String(filename).split(/[/\\]/);
+        if (parts.some((p) => SKIP_DIRS.has(p))) return;
+        schedulePush();
+      },
+    );
+    watchers.push(w);
+    log(`watching ${localRoot} (auto push on save, pull every ${pullEveryMs / 1000}s)`);
+  } catch (e) {
+    log(`watch failed (${e instanceof Error ? e.message : e}) — periodic push only`);
+  }
+
+  // catch-up push shortly after start (T3 may create files)
+  schedulePush();
+  const pullIv = setInterval(() => {
+    void doPull();
+  }, pullEveryMs);
+
+  return {
+    stop: async () => {
+      stopped = true;
+      if (pushTimer) clearTimeout(pushTimer);
+      clearInterval(pullIv);
+      for (const w of watchers) {
+        try {
+          w.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      watchers = [];
+      pending = true;
+      pushing = false;
+      try {
+        const r = await pushFromMirror(client, sessionId, localRoot);
+        log(`final push → cloud  ${r.files} files`);
+      } catch (e) {
+        log(`final push error: ${e instanceof Error ? e.message : e}`);
+      }
+    },
+  };
 }
