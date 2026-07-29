@@ -67,7 +67,29 @@ export function ApiKeysPage() {
       toast.success("API key created — copy it now");
       await refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Create failed");
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" &&
+              e &&
+              "message" in e &&
+              typeof (e as { message: unknown }).message === "string"
+            ? (e as { message: string }).message
+            : "Create failed";
+      // ApiError body may carry duplicate_label message
+      const body =
+        e && typeof e === "object" && "body" in e
+          ? (e as { body: unknown }).body
+          : null;
+      const fromBody =
+        body &&
+        typeof body === "object" &&
+        body &&
+        "message" in body &&
+        typeof (body as { message: unknown }).message === "string"
+          ? (body as { message: string }).message
+          : null;
+      toast.error(fromBody || msg);
     } finally {
       setCreating(false);
     }
