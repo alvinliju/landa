@@ -334,7 +334,19 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       /** optional TTL seconds (capped by project maxSessionSec) */
       ttlSec?: number;
     };
+    // product surface: only landa-agent for now
     const templateSlug = body.template ?? "landa-agent";
+    if (templateSlug !== "landa-agent") {
+      return c.json(
+        {
+          error: "template_unavailable",
+          template: templateSlug,
+          available: ["landa-agent"],
+          hint: "Only landa-agent is live; more templates coming soon",
+        },
+        400,
+      );
+    }
     const label = body.label ?? "";
     const db = sql();
 

@@ -151,9 +151,10 @@ and never log the full API key.`;
         <CardHeader>
           <CardTitle>3. Create → exec → destroy</CardTitle>
           <CardDescription>
-            Prefer template <code className="font-mono text-xs">landa-agent</code>{" "}
-            (Firecracker + offline tools). Seats expire after 8 hours if you
-            forget to destroy them.
+            Only template{" "}
+            <code className="font-mono text-xs">landa-agent</code> is live
+            (Firecracker + offline tools). Other templates: coming soon. Seats
+            expire after 8 hours if you forget to destroy them.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -181,7 +182,7 @@ and never log the full API key.`;
                   [
                     ["GET", "/health", "no auth"],
                     ["GET", "/v1/me", "project + limits"],
-                    ["GET", "/v1/templates", "landa-agent, landa-lite"],
+                    ["GET", "/v1/templates", "landa-agent only"],
                     ["GET", "/v1/sandboxes", "list your VMs"],
                     ["POST", "/v1/sandboxes", "create { template, label? }"],
                     ["POST", "/v1/sandboxes/:id/exec", '{ "cmd": "…" }'],

@@ -40,7 +40,7 @@ Auth: `Authorization: Bearer <key>` or `X-Api-Key: <key>`, or Better Auth sessio
 
 Agent skill: **`docs/SKILL.md`** (`landa-vms`) — create/exec/destroy VMs with a user API key.
 
-Templates: `landa-agent` (Grok default), `landa-lite` (shell smoke).
+Templates: **`landa-agent` only** (more coming soon). See **`docs/SKILL.md`**.
 
 ## maps to E2B UI
 

@@ -36,34 +36,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api } from "@/lib/api";
-import type { Sandbox, Template } from "@/lib/types";
+import type { Sandbox } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const ONLY_TEMPLATE = "landa-agent";
 
 export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
   const [sandboxes, setSandboxes] = React.useState<Sandbox[]>([]);
-  const [templates, setTemplates] = React.useState<Template[]>([]);
   const [open, setOpen] = React.useState(false);
   const [label, setLabel] = React.useState("");
-  const [template, setTemplate] = React.useState("landa-agent");
   const [busy, setBusy] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [s, t] = await Promise.all([api.sandboxes(), api.templates()]);
+      const s = await api.sandboxes();
       setSandboxes(s.sandboxes);
-      const only = t.templates.filter(
-        (x) => x.slug === "landa-agent" || x.slug === "landa-lite",
-      );
-      setTemplates(only.length ? only : t.templates);
-      if (!only.find((x) => x.slug === template) && only[0]) {
-        setTemplate(only[0].slug);
-      }
     } finally {
       setLoading(false);
     }
-  }, [template]);
+  }, []);
 
   React.useEffect(() => {
     void refresh().catch((e) => toast.error(String(e.message ?? e)));
@@ -73,7 +66,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
     setBusy(true);
     try {
       const { sandbox } = await api.createSandbox({
-        template,
+        template: ONLY_TEMPLATE,
         label: label.trim() || undefined,
       });
       toast.success("VM created");
@@ -103,7 +96,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
     <PageContainer className="flex flex-col gap-6">
       <PageHeader
         title="VMs"
-        description="Agent computers owned by your account."
+        description="Agent computers (landa-agent). Create → exec → destroy."
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => void refresh()}>
@@ -126,9 +119,9 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
             </EmptyMedia>
             <EmptyTitle>No VMs yet</EmptyTitle>
             <EmptyDescription>
-              Prefer{" "}
-              <span className="font-mono">landa-agent</span> for a full offline
-              toolkit.
+              Spins up{" "}
+              <span className="font-mono">landa-agent</span> — offline
+              python3, bash, and jq on Firecracker.
             </EmptyDescription>
           </EmptyHeader>
           <Button size="sm" onClick={() => setOpen(true)}>
@@ -193,37 +186,16 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
           <DialogHeader>
             <DialogTitle>Create VM</DialogTitle>
             <DialogDescription>
-              Spawns a machine owned by your account.
+              Uses template{" "}
+              <span className="font-mono">landa-agent</span> only. More images
+              coming soon.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="template">Template</Label>
-              <div className="grid gap-2">
-                {templates.map((t) => {
-                  const selected = template === t.slug;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTemplate(t.slug)}
-                      className={cn(
-                        "flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5 text-left text-sm",
-                        selected
-                          ? "border-foreground/20 bg-muted"
-                          : "border-border hover:bg-muted/50",
-                      )}
-                    >
-                      <div>
-                        <div className="font-mono font-medium">{t.slug}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {t.name}
-                        </div>
-                      </div>
-                      <BackendChip backend={t.backend} />
-                    </button>
-                  );
-                })}
+            <div className="rounded-lg border bg-muted/40 px-3 py-2.5 text-sm">
+              <div className="font-mono font-medium">{ONLY_TEMPLATE}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                Firecracker · offline python3 + bash + jq
               </div>
             </div>
             <div className="grid gap-2">
@@ -241,10 +213,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button
-              disabled={busy || !template}
-              onClick={() => void create()}
-            >
+            <Button disabled={busy} onClick={() => void create()}>
               {busy ? "Creating…" : "Create VM"}
             </Button>
           </DialogFooter>
