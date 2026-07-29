@@ -1,15 +1,12 @@
 /**
- * Launch bundled T3 Code from monorepo folder `t3/`.
+ * Launch bundled T3 from monorepo `t3/`.
  *
- * Architecture (dev):
- *   server  http://127.0.0.1:13773  (WebSocket + API)
- *   web     http://127.0.0.1:5733   (Vite UI — REQUIRED for browser)
- *
- * `pnpm dev:server` only starts :13773 → Firefox "can't connect to :5733".
- * We must use `pnpm dev` (server + web) for local laptop GUI.
+ * Cloud workspaces: pre-register project via `t3 project add <mirror>`, then
+ * `t3 start --base-dir <per-session-t3-home> <mirror>` so the UI has a project.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { access, constants } from "node:fs/promises";
+import { access, constants, mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +18,12 @@ export function landaRepoRoot(): string {
 
 export function bundledT3Root(repoRoot = landaRepoRoot()): string {
   return process.env.LANDA_T3_ROOT?.trim() || join(repoRoot, "t3");
+}
+
+/** Isolated T3 sqlite/state per landa session (or "default"). */
+export function t3HomeForSession(sessionId?: string): string {
+  const id = sessionId || "default";
+  return join(homedir(), ".cache", "landa", "t3-home", id);
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -48,21 +51,15 @@ async function which(cmd: string): Promise<string | null> {
 
 async function t3DepsReady(t3Root: string): Promise<boolean> {
   if (await exists(join(t3Root, "node_modules/.modules.yaml"))) return true;
-  if (await exists(join(t3Root, "node_modules/@effect/platform-node"))) return true;
-  if (
-    await exists(join(t3Root, "apps/server/node_modules/@effect/platform-node"))
-  )
+  if (await exists(join(t3Root, "apps/server/node_modules/@effect/platform-node")))
     return true;
   return false;
 }
 
-function parseNodeMajorMinor(v: string): { major: number; minor: number } {
-  const m = v.replace(/^v/, "").split(".");
-  return { major: Number(m[0] || 0), minor: Number(m[1] || 0) };
-}
-
 function nodeEngineOk(version: string): boolean {
-  const { major, minor } = parseNodeMajorMinor(version);
+  const m = version.replace(/^v/, "").split(".");
+  const major = Number(m[0] || 0);
+  const minor = Number(m[1] || 0);
   if (major === 22 && minor >= 16) return true;
   if (major === 23 && minor >= 11) return true;
   if (major > 24) return true;
@@ -70,17 +67,72 @@ function nodeEngineOk(version: string): boolean {
   return false;
 }
 
+function runForeground(
+  cmd: string,
+  args: string[],
+  opts: { env: NodeJS.ProcessEnv; cwd: string },
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child: ChildProcess = spawn(cmd, args, {
+      stdio: "inherit",
+      env: opts.env,
+      cwd: opts.cwd,
+      shell: process.platform === "win32",
+    });
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        resolve();
+        return;
+      }
+      if (code === 0 || code === null) resolve();
+      else reject(new Error(`${cmd} ${args.join(" ")} exited ${code}`));
+    });
+  });
+}
+
+/** t3 CLI via pnpm --filter t3 exec */
+async function t3Cli(
+  pnpm: string,
+  t3Root: string,
+  env: NodeJS.ProcessEnv,
+  args: string[],
+): Promise<void> {
+  await runForeground(
+    pnpm,
+    ["--filter", "t3", "exec", "node", "--experimental-strip-types", "src/bin.ts", ...args],
+    { env, cwd: t3Root },
+  );
+}
+
+/** Ensure mirror looks like a real project so agents/T3 are happy. */
+async function seedMirrorProject(mirror: string, title: string): Promise<void> {
+  await mkdir(mirror, { recursive: true });
+  const pkg = join(mirror, "package.json");
+  if (!(await exists(pkg))) {
+    await writeFile(
+      pkg,
+      JSON.stringify(
+        {
+          name: title.replace(/[^a-zA-Z0-9._-]+/g, "-").toLowerCase() || "landa-workspace",
+          private: true,
+          description: "landa cloud workspace mirror",
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+  }
+}
+
 export type LaunchT3Opts = {
   base: string;
   key: string;
   sessionId?: string;
-  /**
-   * start  = full local GUI (pnpm dev: server :13773 + web :5733)
-   * serve  = headless API only (pair remote client; no Vite)
-   */
+  sessionName?: string;
   mode?: "serve" | "start";
   host?: string;
-  /** Provider workspace cwd (cloud mirror path). Passed to t3 start/serve. */
   workspaceCwd?: string;
 };
 
@@ -106,114 +158,100 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
   }
 
   const pnpm = await which("pnpm");
-  if (!pnpm) {
-    throw new Error("pnpm required — brew install pnpm");
-  }
+  if (!pnpm) throw new Error("pnpm required — brew install pnpm");
 
   if (!(await t3DepsReady(t3Root))) {
     console.log(`→ pnpm install in ${t3Root}…`);
     await runForeground(pnpm, ["install"], { env, cwd: t3Root });
     if (!(await t3DepsReady(t3Root))) {
-      throw new Error("pnpm install incomplete — @effect packages still missing");
+      throw new Error("pnpm install incomplete — re-run after fixing errors");
     }
   }
 
   const mode = opts.mode ?? "start";
+  const mirror = opts.workspaceCwd;
+  const t3Home = t3HomeForSession(opts.sessionId);
+  await mkdir(t3Home, { recursive: true });
 
-  console.log(`→ bundled T3 (${mode}) from ${t3Root}`);
-  console.log(`  LANDA_API_BASE=${opts.base}`);
-  console.log("");
+  // Per-session T3 state so projects don't collide with ~/Documents/landa
+  env.T3CODE_HOME = t3Home;
 
-  const cwdArg = opts.workspaceCwd ? [opts.workspaceCwd] : [];
-  if (opts.workspaceCwd) {
-    console.log(`  workspace (cloud mirror): ${opts.workspaceCwd}`);
-    env.LANDA_WORKSPACE_MIRROR = opts.workspaceCwd;
+  if (mirror) {
+    const title = opts.sessionName
+      ? `landa:${opts.sessionName}`
+      : `landa:${opts.sessionId?.slice(0, 8) ?? "workspace"}`;
+    await seedMirrorProject(mirror, title);
+
+    console.log(`→ register T3 project at mirror`);
+    console.log(`  workspace: ${mirror}`);
+    console.log(`  t3 home:   ${t3Home}`);
+    try {
+      await t3Cli(pnpm, t3Root, env, [
+        "project",
+        "add",
+        mirror,
+        "--title",
+        title,
+        "--base-dir",
+        t3Home,
+      ]);
+    } catch (e) {
+      // already exists is fine
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/already exists|Added project/i.test(msg)) {
+        console.warn("  project add:", msg);
+      }
+    }
   }
 
+  console.log(`→ bundled T3 (${mode})`);
+  console.log(`  LANDA_API_BASE=${opts.base}`);
+  if (mirror) console.log(`  project cwd=${mirror}`);
+  console.log("");
+
   if (mode === "serve") {
-    console.log("  headless serve — open the pairing URL the server prints");
-    console.log("  (API ~:13773/:3773 — not Vite :5733)");
-    console.log("");
-    await runForeground(
-      pnpm,
-      [
-        "--filter",
-        "t3",
-        "exec",
-        "node",
-        "--experimental-strip-types",
-        "src/bin.ts",
-        "serve",
-        "--auto-bootstrap-project-from-cwd",
-        ...(opts.host ? ["--host", opts.host] : []),
-        ...cwdArg,
-      ],
-      { env, cwd: t3Root },
-    );
+    console.log("  headless — use pairing URL on the API port (not :5733 unless Vite runs)");
+    await t3Cli(pnpm, t3Root, env, [
+      "serve",
+      "--base-dir",
+      t3Home,
+      "--auto-bootstrap-project-from-cwd",
+      ...(opts.host ? ["--host", opts.host] : []),
+      ...(mirror ? [mirror] : []),
+    ]);
     return;
   }
 
-  // Prefer single-binary start with workspace cwd so cloud mirror becomes the project.
-  // Falls back to full pnpm dev (UI on :5733) if start fails.
-  console.log("  starting T3 with cloud workspace as project cwd…");
-  console.log("  UI: open pairing URL (often :5733 in dev, or server port)");
+  // start: server + open browser; project already registered
+  console.log("  open the pairing / app URL T3 prints");
+  console.log("  (dev UI may be :5733; server often :3773 or :13773)");
   console.log("");
 
   try {
-    await runForeground(
-      pnpm,
-      [
-        "--filter",
-        "t3",
-        "exec",
-        "node",
-        "--experimental-strip-types",
-        "src/bin.ts",
-        "start",
-        "--auto-bootstrap-project-from-cwd",
-        ...cwdArg,
-      ],
-      { env, cwd: opts.workspaceCwd || t3Root },
-    );
+    await t3Cli(pnpm, t3Root, env, [
+      "start",
+      "--base-dir",
+      t3Home,
+      "--auto-bootstrap-project-from-cwd",
+      ...(mirror ? [mirror] : []),
+    ]);
     return;
   } catch (e) {
-    console.warn("t3 start failed, falling back to pnpm dev (full UI)…");
+    console.warn("t3 start exited; falling back to pnpm dev for full UI…");
     console.warn(String(e instanceof Error ? e.message : e));
   }
 
-  console.log("  full stack: server :13773 + web :5733");
-  console.log("  open http://localhost:5733/pair#token=… when printed");
+  // Full Vite UI — still use isolated T3CODE_HOME
+  console.log("  full stack pnpm dev → web :5733 + server :13773");
+  console.log("  open http://localhost:5733/pair#token=… when shown");
   console.log("");
-  // Run server from monorepo; pass mirror via env for landa hooks
   await runForeground(pnpm, ["dev"], {
     env: {
       ...env,
-      ...(opts.workspaceCwd ? { T3CODE_BOOTSTRAP_CWD: opts.workspaceCwd } : {}),
+      T3CODE_HOME: t3Home,
+      T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: mirror ? "1" : "0",
+      ...(mirror ? { T3CODE_BOOTSTRAP_CWD: mirror } : {}),
     },
     cwd: t3Root,
-  });
-}
-
-function runForeground(
-  cmd: string,
-  args: string[],
-  opts: { env: NodeJS.ProcessEnv; cwd: string },
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child: ChildProcess = spawn(cmd, args, {
-      stdio: "inherit",
-      env: opts.env,
-      cwd: opts.cwd,
-      shell: process.platform === "win32",
-    });
-    child.on("error", reject);
-    child.on("exit", (code, signal) => {
-      if (signal) {
-        resolve();
-        return;
-      }
-      if (code === 0 || code === null) resolve();
-      else reject(new Error(`${cmd} ${args.join(" ")} exited ${code}`));
-    });
   });
 }

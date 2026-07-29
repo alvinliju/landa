@@ -209,6 +209,7 @@ export async function runT3(opts: T3Opts = {}): Promise<void> {
     base,
     key,
     sessionId,
+    sessionName: sessionName || undefined,
     mode: opts.mode ?? "start",
     workspaceCwd: cloud ? mirrorPath : undefined,
   });
