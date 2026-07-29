@@ -1,5 +1,6 @@
 import * as React from "react";
 import { LoaderCircleIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import {
@@ -14,7 +15,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { api, setApiKey } from "@/lib/api";
+import { loadMe, setApiKey } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import {
   pageFromPath,
@@ -45,24 +46,40 @@ export default function App() {
     pageFromPath(location.pathname),
   );
 
-  const boot = React.useCallback(async () => {
-    try {
-      const me = await api.me();
+  const applyMe = React.useCallback(
+    (me: Awaited<ReturnType<typeof loadMe>>) => {
       setProject(me.project);
       setBackends(me.backends ?? []);
       setUser(me.user ?? null);
       setAuthed(true);
-    } catch {
-      setAuthed(false);
-      setProject(null);
-      setUser(null);
-    } finally {
-      setReady(true);
-    }
-  }, []);
+    },
+    [],
+  );
+
+  /** Initial page load + post sign-in. Returns true when console can open. */
+  const boot = React.useCallback(
+    async (opts?: { retries?: number; quiet?: boolean }): Promise<boolean> => {
+      try {
+        const me = await loadMe(opts?.retries ?? 5);
+        applyMe(me);
+        return true;
+      } catch {
+        setAuthed(false);
+        setProject(null);
+        setUser(null);
+        if (!opts?.quiet) {
+          /* initial visit without session is expected */
+        }
+        return false;
+      } finally {
+        setReady(true);
+      }
+    },
+    [applyMe],
+  );
 
   React.useEffect(() => {
-    void boot();
+    void boot({ quiet: true });
   }, [boot]);
 
   React.useEffect(() => {
@@ -81,6 +98,36 @@ export default function App() {
     setRoute({ page: "sandbox", sandboxId: id });
   }
 
+  /** Called after Better Auth sign-in / sign-up succeeds. */
+  async function enterConsole(): Promise<void> {
+    setReady(false);
+    try {
+      // confirm cookie session is visible to the client
+      for (let i = 0; i < 6; i++) {
+        const { data } = await authClient.getSession();
+        if (data?.session && data?.user) break;
+        await new Promise((r) => setTimeout(r, 50 + i * 50));
+      }
+
+      const ok = await boot({ retries: 8, quiet: true });
+      if (!ok) {
+        throw new Error(
+          "Signed in, but the console could not load your project. Try again.",
+        );
+      }
+      // land on overview after auth
+      history.replaceState({}, "", pagePaths.overview);
+      setRoute({ page: "overview" });
+    } catch (e) {
+      setReady(true);
+      setAuthed(false);
+      setProject(null);
+      const msg = e instanceof Error ? e.message : "Could not open console";
+      toast.error(msg);
+      throw e;
+    }
+  }
+
   async function handleSignOut() {
     try {
       await authClient.signOut();
@@ -91,6 +138,8 @@ export default function App() {
     setAuthed(false);
     setProject(null);
     setUser(null);
+    history.replaceState({}, "", pagePaths.overview);
+    setRoute({ page: "overview" });
   }
 
   if (!ready) {
@@ -103,14 +152,7 @@ export default function App() {
   }
 
   if (!authed || !project) {
-    return (
-      <SignInPage
-        onAuthed={() => {
-          setReady(false);
-          void boot();
-        }}
-      />
-    );
+    return <SignInPage onAuthed={enterConsole} />;
   }
 
   const userLabel = user?.email || user?.name || project.slug;

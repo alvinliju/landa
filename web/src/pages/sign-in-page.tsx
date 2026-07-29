@@ -24,7 +24,12 @@ const features = [
   },
 ];
 
-export function SignInPage({ onAuthed }: { onAuthed: () => void }) {
+export function SignInPage({
+  onAuthed,
+}: {
+  /** Opens the console after cookies are set. May throw. */
+  onAuthed: () => void | Promise<void>;
+}) {
   const [mode, setMode] = React.useState<"signin" | "signup">("signin");
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -42,21 +47,21 @@ export function SignInPage({ onAuthed }: { onAuthed: () => void }) {
           password,
         });
         if (error) throw new Error(error.message || "Could not create account");
-        toast.success("Account created");
       } else {
         const { error } = await authClient.signIn.email({
           email: email.trim(),
           password,
         });
         if (error) throw new Error(error.message || "Could not sign in");
-        toast.success("Welcome back");
       }
-      onAuthed();
+      // Wait until session cookie is applied and /v1/me succeeds → dashboard
+      await onAuthed();
+      toast.success(mode === "signup" ? "Account created" : "Welcome back");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Authentication failed");
-    } finally {
       setLoading(false);
     }
+    // keep loading true on success — App unmounts this page for the console
   }
 
   return (
