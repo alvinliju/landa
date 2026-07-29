@@ -110,15 +110,34 @@ mkfs.ext4 -q -d rootfs -F "$OUT"
 # also install as default landa rootfs name for easy swap
 cp -f "$OUT" "$ASSETS/landa-rootfs.ext4"
 
-# kernel if missing
+# Real Firecracker CI kernel (hello-vmlinux is NOT enough for Alpine userspace)
+echo "→ firecracker CI vmlinux"
+S3="https://s3.amazonaws.com/spec.ccfc.min"
+CI_PREFIX=$(curl -fsSL "$S3?list-type=2&prefix=firecracker-ci/&delimiter=/" \
+  | grep -oE "firecracker-ci/[0-9]{8}-[^/<]+/" | sort | tail -1)
+if [[ -n "$CI_PREFIX" ]]; then
+  # prefer vmlinux from same arch
+  KKEY=$(curl -fsSL "$S3?list-type=2&prefix=${CI_PREFIX}${ARCH}/" \
+    | grep -oE "${CI_PREFIX}${ARCH}/vmlinux-[^<\"]+" | head -1 || true)
+  if [[ -z "$KKEY" ]]; then
+    KKEY=$(curl -fsSL "$S3?list-type=2&prefix=${CI_PREFIX}${ARCH}/" \
+      | grep -oE "${CI_PREFIX}${ARCH}/[^<\"]*vmlinux[^<\"]*" | head -1 || true)
+  fi
+  if [[ -n "$KKEY" ]]; then
+    echo "  kernel key=$KKEY"
+    curl -fsSL -o "$ASSETS/vmlinux.bin" "$S3/$KKEY"
+    cp -f "$ASSETS/vmlinux.bin" "$ASSETS/hello-vmlinux.bin"
+  else
+    echo "  warn: no CI vmlinux listed; keeping existing kernel if any"
+  fi
+fi
 if [[ ! -f "$ASSETS/hello-vmlinux.bin" ]]; then
-  echo "→ firecracker hello kernel"
+  echo "→ fallback hello kernel (may not run Alpine)"
   curl -fsSL -o "$ASSETS/hello-vmlinux.bin" \
-    "https://s3.amazonaws.com/spec.ccfc.min/img/hello/kernel/hello-vmlinux.bin"
+    "$S3/img/hello/kernel/hello-vmlinux.bin"
 fi
 
-# default symlink-ish: point hello-rootfs at alpine for backend defaults
-# (don't delete huge ubuntu if present — overwrite with alpine for speed)
+# also install as default names used by backend
 cp -f "$OUT" "$ASSETS/hello-rootfs.ext4"
 
 echo "→ done"
