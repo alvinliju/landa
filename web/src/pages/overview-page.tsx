@@ -63,6 +63,22 @@ export function OverviewPage({
   const running = sandboxes.filter((s) => s.status === "running").length;
   const ttlH = Math.round(project.maxSessionSec / 3600);
 
+  // Product: users only create landa-agent → Firecracker. "memory" is an
+  // internal test driver, not a second product option.
+  const hasFirecracker = backends.includes("firecracker");
+  const runtimeLabel = hasFirecracker
+    ? "Firecracker"
+    : backends.includes("memory")
+      ? "Unavailable"
+      : loading
+        ? "…"
+        : "—";
+  const runtimeHint = hasFirecracker
+    ? "Isolated VMs for landa-agent seats"
+    : backends.includes("memory")
+      ? "Firecracker not registered on this host"
+      : "Checking seat runtime…";
+
   return (
     <PageContainer className="flex flex-col gap-6">
       <PageHeader
@@ -96,20 +112,21 @@ export function OverviewPage({
         <StatCard
           label="Running"
           value={`${running} / ${project.maxConcurrent}`}
-          hint="Active VMs"
+          hint="Active agent VMs on your account"
           icon={<ActivityIcon className="size-3.5" />}
         />
         <StatCard
           label="API"
           value={health?.ok ? "healthy" : loading ? "…" : "down"}
-          hint={health?.db ? "Database connected" : "Checking…"}
+          hint={health?.db ? "Control plane + database" : "Checking…"}
           icon={<SparklesIcon className="size-3.5" />}
         />
         <StatCard
-          label="Backends"
-          value={backends.length ? backends.join(" · ") : "—"}
-          hint="Compute drivers"
+          label="VM runtime"
+          value={runtimeLabel}
+          hint={runtimeHint}
           icon={<CpuIcon className="size-3.5" />}
+          mono={false}
         />
       </div>
 
