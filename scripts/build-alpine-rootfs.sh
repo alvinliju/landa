@@ -117,12 +117,10 @@ CI_PREFIX=$(curl -fsSL "$S3?list-type=2&prefix=firecracker-ci/&delimiter=/" \
   | grep -oE "firecracker-ci/[0-9]{8}-[^/<]+/" | sort | tail -1)
 if [[ -n "$CI_PREFIX" ]]; then
   # prefer vmlinux from same arch
-  KKEY=$(curl -fsSL "$S3?list-type=2&prefix=${CI_PREFIX}${ARCH}/" \
-    | grep -oE "${CI_PREFIX}${ARCH}/vmlinux-[^<\"]+" | head -1 || true)
-  if [[ -z "$KKEY" ]]; then
-    KKEY=$(curl -fsSL "$S3?list-type=2&prefix=${CI_PREFIX}${ARCH}/" \
-      | grep -oE "${CI_PREFIX}${ARCH}/[^<\"]*vmlinux[^<\"]*" | head -1 || true)
-  fi
+  # pick non-debug vmlinux-VERSION (not .config / debug/)
+  KKEY=$(curl -fsSL "$S3?list-type=2&prefix=${CI_PREFIX}${ARCH}/vmlinux-" \
+    | grep -oE "${CI_PREFIX}${ARCH}/vmlinux-[0-9][0-9.]+" \
+    | grep -v debug | sort -u | head -1 || true)
   if [[ -n "$KKEY" ]]; then
     echo "  kernel key=$KKEY"
     curl -fsSL -o "$ASSETS/vmlinux.bin" "$S3/$KKEY"
@@ -131,7 +129,7 @@ if [[ -n "$CI_PREFIX" ]]; then
     echo "  warn: no CI vmlinux listed; keeping existing kernel if any"
   fi
 fi
-if [[ ! -f "$ASSETS/hello-vmlinux.bin" ]]; then
+if [[ ! -f "$ASSETS/vmlinux.bin" && ! -f "$ASSETS/hello-vmlinux.bin" ]]; then
   echo "→ fallback hello kernel (may not run Alpine)"
   curl -fsSL -o "$ASSETS/hello-vmlinux.bin" \
     "$S3/img/hello/kernel/hello-vmlinux.bin"

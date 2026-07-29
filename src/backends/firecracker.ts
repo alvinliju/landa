@@ -98,7 +98,7 @@ export class FirecrackerBackend implements ComputerBackend {
     this.defaultKernel =
       opts.kernel ??
       process.env.LANDA_FC_KERNEL ??
-      join(this.assetsDir, "hello-vmlinux.bin");
+      join(this.assetsDir, "vmlinux.bin");
     this.defaultRootfs = opts.rootfs ?? pickDefaultRootfs(this.assetsDir);
     this.sshKey =
       opts.sshKey ??
@@ -122,7 +122,11 @@ export class FirecrackerBackend implements ComputerBackend {
   }
 
   async create(spec: ComputerSpec): Promise<ComputerInfo> {
-    const kernel = this.resolveAsset(spec.kernel, this.defaultKernel);
+    const kernel = await firstExisting([
+      this.resolveAsset(spec.kernel, this.defaultKernel),
+      join(this.assetsDir, "vmlinux.bin"),
+      join(this.assetsDir, "hello-vmlinux.bin"),
+    ]);
     const baseRootfs = this.resolveAsset(
       spec.rootfs ?? spec.image,
       this.defaultRootfs,

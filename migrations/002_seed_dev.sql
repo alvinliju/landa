@@ -33,7 +33,7 @@ SELECT
   'firecracker-hello',
   'Firecracker Alpine (default)',
   'firecracker',
-  '{"kernel":"assets/hello-vmlinux.bin","rootfs":"assets/alpine-rootfs.ext4","memMiB":128,"note":"alpine+dropbear — target <2s cold create"}'::jsonb
+  '{"kernel":"assets/vmlinux.bin","rootfs":"assets/alpine-rootfs.ext4","memMiB":128,"note":"alpine+dropbear — target <2s cold create"}'::jsonb
 WHERE
   NOT EXISTS (
     SELECT 1 FROM templates WHERE slug = 'firecracker-hello' AND project_id IS NULL
@@ -46,7 +46,7 @@ SELECT
   'landa-lite',
   'Landa lite Alpine',
   'firecracker',
-  '{"kernel":"assets/hello-vmlinux.bin","rootfs":"assets/alpine-rootfs.ext4","memMiB":128,"note":"same alpine image — change rootfs path to swap"}'::jsonb
+  '{"kernel":"assets/vmlinux.bin","rootfs":"assets/alpine-rootfs.ext4","memMiB":128,"note":"same alpine image — change rootfs path to swap"}'::jsonb
 WHERE
   NOT EXISTS (
     SELECT 1 FROM templates WHERE slug = 'landa-lite' AND project_id IS NULL
