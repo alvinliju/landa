@@ -53,16 +53,13 @@ type SessionRow = {
   updatedAt: string;
 };
 
-export function SessionsPage() {
+export function SessionsPage({ onOpen }: { onOpen: (id: string) => void }) {
   const [sessions, setSessions] = React.useState<SessionRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [repo, setRepo] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  const [cmd, setCmd] = React.useState("ls -la /workspace");
-  const [execOut, setExecOut] = React.useState("");
-  const [activeId, setActiveId] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -91,8 +88,8 @@ export function SessionsPage() {
       setOpen(false);
       setName("");
       setRepo("");
-      setActiveId(r.session.id);
       await refresh();
+      onOpen(r.session.id);
     } catch (e) {
       const body =
         e && typeof e === "object" && "body" in e
@@ -135,7 +132,6 @@ export function SessionsPage() {
     try {
       await api.destroySession(id);
       toast.success("Session destroyed");
-      if (activeId === id) setActiveId(null);
       await refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Destroy failed");
@@ -143,23 +139,6 @@ export function SessionsPage() {
       setBusy(false);
     }
   }
-
-  async function runExec() {
-    if (!activeId || !cmd.trim()) return;
-    setBusy(true);
-    try {
-      const { result } = await api.sessionExec(activeId, cmd);
-      setExecOut(
-        `exit ${result.exitCode} · ${result.durationMs}ms\n${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`,
-      );
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Exec failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const active = sessions.find((s) => s.id === activeId) ?? null;
 
   return (
     <PageContainer className="flex flex-col gap-6 pb-12">
@@ -213,11 +192,8 @@ export function SessionsPage() {
               {sessions.map((s) => (
                 <TableRow
                   key={s.id}
-                  className={cn(
-                    "cursor-pointer",
-                    activeId === s.id && "bg-muted/50",
-                  )}
-                  onClick={() => setActiveId(s.id)}
+                  className="cursor-pointer"
+                  onClick={() => onOpen(s.id)}
                 >
                   <TableCell>
                     <div className="font-medium">{s.name}</div>
@@ -279,46 +255,6 @@ export function SessionsPage() {
           </Table>
         </div>
       )}
-
-      {active ? (
-        <div className="flex flex-col gap-3 rounded-lg border p-4">
-          <div className="text-sm font-medium">
-            Exec in{" "}
-            <span className="font-mono">{active.name}</span>
-            {active.status !== "running" ? (
-              <span className="ml-2 text-muted-foreground">
-                (start session first)
-              </span>
-            ) : null}
-          </div>
-          <div className="flex gap-2">
-            <Input
-              className="font-mono text-xs"
-              value={cmd}
-              onChange={(e) => setCmd(e.target.value)}
-              disabled={active.status !== "running"}
-              placeholder="ls -la /workspace"
-            />
-            <Button
-              size="sm"
-              disabled={busy || active.status !== "running"}
-              onClick={() => void runExec()}
-            >
-              Run
-            </Button>
-          </div>
-          {execOut ? (
-            <pre className="max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-[0.7rem]">
-              {execOut}
-            </pre>
-          ) : null}
-          {active.sshHint ? (
-            <p className="font-mono text-[0.65rem] text-muted-foreground">
-              attach (host-local): {active.sshHint}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

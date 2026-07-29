@@ -233,6 +233,22 @@ export const api = {
         hasVolume?: boolean;
       }[];
     }>("/v1/sessions"),
+  session: (id: string) =>
+    request<{
+      session: {
+        id: string;
+        name: string;
+        status: string;
+        repoUrl: string | null;
+        computerId: string | null;
+        guestIp: string | null;
+        sshHint: string | null;
+        error: string | null;
+        createdAt: string;
+        updatedAt: string;
+        lastAttachAt: string | null;
+      };
+    }>(`/v1/sessions/${id}`),
   createSession: (body: { name?: string; repo?: string }) =>
     request<{
       session: {
@@ -251,10 +267,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
   startSession: (id: string) =>
-    request<{ ok: boolean; status: string; computerId?: string }>(
-      `/v1/sessions/${id}/start`,
-      { method: "POST" },
-    ),
+    request<{
+      ok: boolean;
+      status: string;
+      computerId?: string;
+      guestIp?: string;
+      sshHint?: string;
+    }>(`/v1/sessions/${id}/start`, { method: "POST" }),
   stopSession: (id: string) =>
     request<{ ok: boolean; status: string }>(`/v1/sessions/${id}/stop`, {
       method: "POST",
@@ -277,7 +296,9 @@ export const api = {
       `/v1/sessions/${id}/files?path=${encodeURIComponent(path)}&mode=read`,
     ),
   sessionListFiles: (id: string, path = "/workspace") =>
-    request<{ entries: { name: string; type?: string; size?: number }[] }>(
+    request<{
+      entries: { path: string; kind?: string; size?: number; name?: string }[];
+    }>(
       `/v1/sessions/${id}/files?path=${encodeURIComponent(path)}&mode=list`,
     ),
 };

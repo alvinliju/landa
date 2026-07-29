@@ -50,7 +50,7 @@ export function AppSidebar({
   ...props
 }: React.ComponentProps<typeof AppSidebarShell> & {
   page: LandaPage;
-  navigate: (page: Exclude<LandaPage, "sandbox">) => void;
+  navigate: (page: Exclude<LandaPage, "sandbox" | "session">) => void;
   projectSlug?: string;
   user?: SidebarUserInfo;
   onSignOut: () => void;
@@ -76,7 +76,8 @@ export function AppSidebar({
               {nav.map((item) => {
                 const active =
                   page === item.id ||
-                  (item.id === "sandboxes" && page === "sandbox");
+                  (item.id === "sandboxes" && page === "sandbox") ||
+                  (item.id === "sessions" && page === "session");
                 return (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton

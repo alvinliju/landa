@@ -1,6 +1,7 @@
 export type LandaPage =
   | "overview"
   | "sessions"
+  | "session"
   | "sandboxes"
   | "sandbox"
   | "templates"
@@ -8,7 +9,10 @@ export type LandaPage =
   | "api-keys"
   | "settings";
 
-export const pagePaths: Record<Exclude<LandaPage, "sandbox">, string> = {
+export const pagePaths: Record<
+  Exclude<LandaPage, "sandbox" | "session">,
+  string
+> = {
   overview: "/",
   sessions: "/sessions",
   sandboxes: "/sandboxes",
@@ -21,6 +25,7 @@ export const pagePaths: Record<Exclude<LandaPage, "sandbox">, string> = {
 export const pageTitles: Record<LandaPage, string> = {
   overview: "Overview",
   sessions: "Sessions",
+  session: "Session",
   sandboxes: "VMs",
   sandbox: "VM",
   templates: "Templates",
@@ -32,12 +37,17 @@ export const pageTitles: Record<LandaPage, string> = {
 export function pageFromPath(pathname: string): {
   page: LandaPage;
   sandboxId?: string;
+  sessionId?: string;
 } {
   if (pathname.startsWith("/sandboxes/")) {
     const id = pathname.slice("/sandboxes/".length).split("/")[0];
     if (id) return { page: "sandbox", sandboxId: id };
   }
   if (pathname.startsWith("/sandboxes")) return { page: "sandboxes" };
+  if (pathname.startsWith("/sessions/")) {
+    const id = pathname.slice("/sessions/".length).split("/")[0];
+    if (id) return { page: "session", sessionId: id };
+  }
   if (pathname.startsWith("/sessions")) return { page: "sessions" };
   if (pathname.startsWith("/templates")) return { page: "templates" };
   if (pathname.startsWith("/guide")) return { page: "guide" };
@@ -48,6 +58,10 @@ export function pageFromPath(pathname: string): {
 
 export function sandboxPath(id: string) {
   return `/sandboxes/${id}`;
+}
+
+export function sessionPath(id: string) {
+  return `/sessions/${id}`;
 }
 
 /** Public API base users should paste into agents / curl. */

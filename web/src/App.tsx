@@ -22,6 +22,7 @@ import {
   pagePaths,
   pageTitles,
   sandboxPath,
+  sessionPath,
   type LandaPage,
 } from "@/lib/navigation";
 import type { Project } from "@/lib/types";
@@ -30,6 +31,7 @@ import { GuidePage } from "@/pages/guide-page";
 import { OverviewPage } from "@/pages/overview-page";
 import { SandboxDetailPage } from "@/pages/sandbox-detail-page";
 import { SandboxesPage } from "@/pages/sandboxes-page";
+import { SessionDetailPage } from "@/pages/session-detail-page";
 import { SessionsPage } from "@/pages/sessions-page";
 import { SettingsPage } from "@/pages/settings-page";
 import { SignInPage } from "@/pages/sign-in-page";
@@ -91,7 +93,7 @@ export default function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  function navigate(page: Exclude<LandaPage, "sandbox">) {
+  function navigate(page: Exclude<LandaPage, "sandbox" | "session">) {
     history.pushState({}, "", pagePaths[page]);
     setRoute({ page });
   }
@@ -99,6 +101,11 @@ export default function App() {
   function openSandbox(id: string) {
     history.pushState({}, "", sandboxPath(id));
     setRoute({ page: "sandbox", sandboxId: id });
+  }
+
+  function openSession(id: string) {
+    history.pushState({}, "", sessionPath(id));
+    setRoute({ page: "session", sessionId: id });
   }
 
   /** Called after Better Auth sign-in / sign-up succeeds. */
@@ -193,7 +200,16 @@ export default function App() {
               onOpenSandbox={openSandbox}
             />
           ) : null}
-          {route.page === "sessions" ? <SessionsPage /> : null}
+          {route.page === "sessions" ? (
+            <SessionsPage onOpen={openSession} />
+          ) : null}
+          {route.page === "session" && route.sessionId ? (
+            <SessionDetailPage
+              id={route.sessionId}
+              onBack={() => navigate("sessions")}
+              onDestroyed={() => navigate("sessions")}
+            />
+          ) : null}
           {route.page === "sandboxes" ? (
             <SandboxesPage onOpen={openSandbox} />
           ) : null}
