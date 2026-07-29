@@ -1,30 +1,45 @@
-import type { ReactNode } from "react"
+import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 export function PageContainer({
   className,
   ...props
 }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("mx-auto w-full max-w-7xl", className)} {...props} />
-  )
+    <div
+      className={cn(
+        "mx-auto w-full max-w-6xl animate-in-fade px-5 py-7 sm:px-7 lg:px-8",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export function PageHeader({
   actions,
   description,
   title,
+  eyebrow,
 }: {
-  actions?: ReactNode
-  description: ReactNode
-  title: ReactNode
+  actions?: ReactNode;
+  description: ReactNode;
+  title: ReactNode;
+  eyebrow?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+    <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0 space-y-1.5">
+        {eyebrow ? (
+          <div className="text-[0.7rem] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+            {eyebrow}
+          </div>
+        ) : null}
+        <h1 className="text-[1.625rem] leading-tight font-semibold tracking-tight text-balance">
+          {title}
+        </h1>
+        <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground text-pretty">
           {description}
         </p>
       </div>
@@ -34,5 +49,5 @@ export function PageHeader({
         </div>
       ) : null}
     </header>
-  )
+  );
 }

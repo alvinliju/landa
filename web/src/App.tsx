@@ -43,7 +43,6 @@ export default function App() {
 
   const boot = React.useCallback(async () => {
     try {
-      // session cookie first; optional legacy API key still works
       const me = await api.me();
       setProject(me.project);
       setBackends(me.backends ?? []);
@@ -90,8 +89,9 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="flex min-h-svh items-center justify-center">
-        <LoaderCircleIcon className="size-5 animate-spin text-muted-foreground" />
+      <div className="surface-mesh flex min-h-svh flex-col items-center justify-center gap-3">
+        <LoaderCircleIcon className="size-5 animate-spin text-primary" />
+        <p className="text-xs text-muted-foreground">Loading console…</p>
       </div>
     );
   }
@@ -114,19 +114,27 @@ export default function App() {
         navigate={navigate}
         projectSlug={project.slug}
       />
-      <SidebarInset>
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
+      <SidebarInset className="bg-background">
+        <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border/70 bg-background/80 px-4 backdrop-blur-xl">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-1 h-4" />
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbPage>{pageTitles[route.page]}</BreadcrumbPage>
+                <BreadcrumbPage className="font-medium">
+                  {pageTitles[route.page]}
+                </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div className="ml-auto truncate font-mono text-[0.65rem] text-muted-foreground">
-            {userLabel}
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            <span className="hidden rounded-full bg-success/10 px-2 py-0.5 text-[0.65rem] font-medium text-success sm:inline-flex sm:items-center sm:gap-1.5">
+              <span className="pulse-dot size-1.5 rounded-full bg-success" />
+              Live
+            </span>
+            <span className="max-w-[12rem] truncate rounded-md bg-muted/60 px-2 py-1 font-mono text-[0.65rem] text-muted-foreground ring-1 ring-border/50 sm:max-w-xs">
+              {userLabel}
+            </span>
           </div>
         </header>
         <div className="flex-1 overflow-auto">

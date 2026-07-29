@@ -1,8 +1,16 @@
 import * as React from "react";
-import { PlusIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  CpuIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  ServerIcon,
+  SparklesIcon,
+} from "lucide-react";
 
 import { PageContainer, PageHeader } from "@/components/page-header";
 import { BackendChip, StatusBadge } from "@/components/status-badge";
+import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,8 +19,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import type { Health, Project, Sandbox } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export function OverviewPage({
   project,
@@ -45,19 +62,26 @@ export function OverviewPage({
   }, [refresh]);
 
   const running = sandboxes.filter((s) => s.status === "running").length;
+  const ttlH = Math.round(project.maxSessionSec / 3600);
 
   return (
-    <PageContainer className="flex flex-col gap-8 p-6">
+    <PageContainer className="flex flex-col gap-8">
       <PageHeader
+        eyebrow="Console"
         title="Overview"
-        description="Control plane for agent computers. Create seats, exec, snapshot, destroy."
+        description="Control plane for agent computers. Create seats, run commands, snapshot world state, then destroy."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => void refresh()}>
-              <RefreshCwIcon />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-lg"
+              onClick={() => void refresh()}
+            >
+              <RefreshCwIcon className={cn(loading && "animate-spin")} />
               Refresh
             </Button>
-            <Button size="sm" onClick={onCreate}>
+            <Button size="sm" className="h-8 rounded-lg" onClick={onCreate}>
               <PlusIcon />
               New sandbox
             </Button>
@@ -65,64 +89,106 @@ export function OverviewPage({
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
           label="Project"
           value={project.slug}
-          hint={`${project.maxConcurrent} max concurrent`}
+          hint={`${project.maxConcurrent} max concurrent · ${ttlH}h TTL`}
+          icon={<ServerIcon className="size-3.5" />}
+          className="animate-in-up"
         />
-        <Stat
+        <StatCard
           label="Running"
           value={`${running} / ${project.maxConcurrent}`}
-          hint="active seats"
+          hint="Active seats on this project"
+          icon={<ActivityIcon className="size-3.5" />}
+          className="animate-in-up stagger-1"
         />
-        <Stat
+        <StatCard
           label="API"
-          value={health?.ok ? "ok" : loading ? "…" : "down"}
-          hint={health?.db ? "db connected" : "db unknown"}
+          value={health?.ok ? "healthy" : loading ? "…" : "down"}
+          hint={health?.db ? "Database connected" : "Checking database…"}
+          icon={<SparklesIcon className="size-3.5" />}
+          className="animate-in-up stagger-2"
         />
-        <Stat
+        <StatCard
           label="Backends"
-          value={backends.join(", ") || "—"}
-          hint="registered drivers"
+          value={backends.length ? backends.join(" · ") : "—"}
+          hint="Registered compute drivers"
+          icon={<CpuIcon className="size-3.5" />}
+          className="animate-in-up stagger-3"
         />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent sandboxes</CardTitle>
-          <CardDescription>
-            Live seats from{" "}
-            <code className="font-mono text-[0.7rem]">GET /v1/sandboxes</code>
-          </CardDescription>
+      <Card className="shadow-sm animate-in-up stagger-2">
+        <CardHeader className="border-b border-border/60 pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base font-semibold">
+                Recent sandboxes
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Live seats from your project. Click any row to open exec.
+              </CardDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={onCreate}
+            >
+              View all
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {sandboxes.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No seats yet — create a computer for your agent.
-            </p>
+        <CardContent className="pt-4">
+          {loading && sandboxes.length === 0 ? (
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : sandboxes.length === 0 ? (
+            <Empty className="rounded-xl border border-dashed border-border/80 bg-muted/20 py-12">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <TerminalGlyph />
+                </EmptyMedia>
+                <EmptyTitle>No seats yet</EmptyTitle>
+                <EmptyDescription>
+                  Create a computer for your agent — Firecracker for real VMs,
+                  memory for quick smoke tests.
+                </EmptyDescription>
+              </EmptyHeader>
+              <Button size="sm" className="h-8 rounded-lg" onClick={onCreate}>
+                <PlusIcon />
+                Create sandbox
+              </Button>
+            </Empty>
           ) : (
-            sandboxes.slice(0, 8).map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => onOpenSandbox(s.id)}
-                className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2 text-left transition-colors hover:bg-muted/40"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-mono text-xs">
-                    {s.label || s.id.slice(0, 8)}
+            <div className="flex flex-col gap-1.5">
+              {sandboxes.slice(0, 8).map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onOpenSandbox(s.id)}
+                  className="group flex items-center justify-between gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-all hover:border-border/80 hover:bg-muted/40 hover:shadow-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium tracking-tight">
+                      {s.label || s.id.slice(0, 8)}
+                    </div>
+                    <div className="mt-0.5 truncate font-mono text-[0.65rem] text-muted-foreground">
+                      {s.id}
+                    </div>
                   </div>
-                  <div className="truncate font-mono text-[0.65rem] text-muted-foreground">
-                    {s.id}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <BackendChip backend={s.backend} />
+                    <StatusBadge status={s.status} />
                   </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <BackendChip backend={s.backend} />
-                  <StatusBadge status={s.status} />
-                </div>
-              </button>
-            ))
+                </button>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -130,26 +196,16 @@ export function OverviewPage({
   );
 }
 
-function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-}) {
+function TerminalGlyph() {
   return (
-    <Card size="sm">
-      <CardHeader className="pb-0">
-        <CardDescription>{label}</CardDescription>
-        <CardTitle className="font-mono text-base tracking-tight">
-          {value}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-[0.65rem] text-muted-foreground">{hint}</p>
-      </CardContent>
-    </Card>
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" aria-hidden>
+      <path
+        d="M4 7l5 5-5 5M11 17h9"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

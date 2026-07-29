@@ -9,6 +9,7 @@ import {
   AppSidebarHeader,
   AppSidebarShell,
 } from "@/components/app-sidebar-shell";
+import { LandaMark } from "@/components/landa-mark";
 import { ThemeDropdown } from "@/components/theme-dropdown";
 import {
   SidebarContent,
@@ -19,9 +20,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
 import type { LandaPage } from "@/lib/navigation";
-import { pagePaths } from "@/lib/navigation";
 
 const nav = [
   { id: "overview" as const, title: "Overview", icon: LayoutDashboardIcon },
@@ -43,42 +44,59 @@ export function AppSidebar({
   return (
     <AppSidebarShell {...props}>
       <AppSidebarHeader>
-        <div className="flex min-w-0 flex-col gap-0.5 px-1">
-          <span className="truncate font-mono text-sm font-semibold tracking-tight">
-            landa
-          </span>
-          <span className="truncate text-[0.65rem] text-muted-foreground">
-            {projectSlug ? `project · ${projectSlug}` : "computers for agents"}
-          </span>
+        <div className="flex min-w-0 items-center gap-2.5 px-0.5">
+          <LandaMark size="sm" />
+          <div className="min-w-0 leading-none">
+            <div className="truncate text-sm font-semibold tracking-tight">
+              landa
+            </div>
+            <div className="mt-0.5 truncate font-mono text-[0.625rem] text-muted-foreground">
+              {projectSlug ? projectSlug : "console"}
+            </div>
+          </div>
         </div>
       </AppSidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Console</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-[0.65rem] tracking-[0.08em] uppercase">
+            Console
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {nav.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    isActive={
-                      page === item.id ||
-                      (item.id === "sandboxes" && page === "sandbox")
-                    }
-                    onClick={() => navigate(item.id)}
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {nav.map((item) => {
+                const active =
+                  page === item.id ||
+                  (item.id === "sandboxes" && page === "sandbox");
+                return (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      isActive={active}
+                      onClick={() => navigate(item.id)}
+                      className="h-8 rounded-lg"
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
-        <div className="flex items-center justify-between gap-2 px-1">
-          <span className="truncate font-mono text-[0.65rem] text-muted-foreground">
-            {pagePaths[page === "sandbox" ? "sandboxes" : page]}
+      <SidebarSeparator />
+      <SidebarFooter className="gap-2">
+        <div className="rounded-lg bg-muted/50 px-2.5 py-2 ring-1 ring-border/50">
+          <div className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
+            Free tier
+          </div>
+          <div className="mt-0.5 text-xs text-foreground/90">
+            8h seat TTL · concurrent limits
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <span className="truncate text-[0.65rem] text-muted-foreground">
+            Theme
           </span>
           <ThemeDropdown />
         </div>

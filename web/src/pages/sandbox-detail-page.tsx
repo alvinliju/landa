@@ -1,9 +1,15 @@
 import * as React from "react";
-import { ArrowLeftIcon, PlayIcon, Trash2Icon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CameraIcon,
+  PlayIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { PageContainer, PageHeader } from "@/components/page-header";
 import { BackendChip, StatusBadge } from "@/components/status-badge";
+import { TerminalPanel } from "@/components/terminal-panel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import type { ExecResult, Sandbox, WorldSnapshot } from "@/lib/types";
 
@@ -64,7 +71,7 @@ export function SandboxDetailPage({
       const { result: r } = await api.exec(id, cmd);
       setResult(r);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "exec failed");
+      toast.error(err instanceof Error ? err.message : "Exec failed");
     } finally {
       setBusy(false);
     }
@@ -75,9 +82,9 @@ export function SandboxDetailPage({
     try {
       const { snapshot: s } = await api.snapshot(id);
       setSnapshot(s);
-      toast.success("snapshot ok");
+      toast.success("Snapshot captured");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "snapshot failed");
+      toast.error(err instanceof Error ? err.message : "Snapshot failed");
     } finally {
       setBusy(false);
     }
@@ -87,10 +94,10 @@ export function SandboxDetailPage({
     setBusy(true);
     try {
       await api.destroySandbox(id);
-      toast.success("destroyed");
+      toast.success("Sandbox destroyed");
       onDestroyed();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "destroy failed");
+      toast.error(err instanceof Error ? err.message : "Destroy failed");
     } finally {
       setBusy(false);
     }
@@ -98,36 +105,51 @@ export function SandboxDetailPage({
 
   if (!sandbox) {
     return (
-      <PageContainer className="p-6">
-        <p className="text-xs text-muted-foreground">loading…</p>
+      <PageContainer className="flex flex-col gap-6">
+        <Skeleton className="h-10 w-64 rounded-lg" />
+        <Skeleton className="h-8 w-full max-w-md rounded-lg" />
+        <Skeleton className="h-64 w-full rounded-xl" />
       </PageContainer>
     );
   }
 
+  const running = sandbox.status === "running";
+
   return (
-    <PageContainer className="flex flex-col gap-6 p-6">
+    <PageContainer className="flex flex-col gap-6">
       <PageHeader
+        eyebrow="Sandbox"
         title={sandbox.label || sandbox.id.slice(0, 8)}
         description={
-          <span className="font-mono text-[0.7rem]">{sandbox.id}</span>
+          <span className="font-mono text-[0.75rem] text-muted-foreground">
+            {sandbox.id}
+          </span>
         }
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={onBack}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-lg"
+              onClick={onBack}
+            >
               <ArrowLeftIcon />
               Back
             </Button>
             <Button
               variant="outline"
               size="sm"
-              disabled={busy || sandbox.status !== "running"}
+              className="h-8 rounded-lg"
+              disabled={busy || !running}
               onClick={() => void runSnapshot()}
             >
+              <CameraIcon />
               Snapshot
             </Button>
             <Button
               variant="destructive"
               size="sm"
+              className="h-8 rounded-lg"
               disabled={busy}
               onClick={() => void destroy()}
             >
@@ -142,89 +164,111 @@ export function SandboxDetailPage({
         <StatusBadge status={sandbox.status} />
         <BackendChip backend={sandbox.backend} />
         {sandbox.metadata.computerId ? (
-          <span className="font-mono text-[0.65rem] text-muted-foreground">
-            seat {sandbox.metadata.computerId}
-          </span>
+          <MetaChip label="seat" value={sandbox.metadata.computerId} />
         ) : null}
         {sandbox.metadata.createMs ? (
-          <span className="rounded-md border border-border/60 px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
-            create {sandbox.metadata.createMs}ms
-          </span>
+          <MetaChip label="boot" value={`${sandbox.metadata.createMs}ms`} />
         ) : null}
         {sandbox.expires_at ? (
-          <span className="rounded-md border border-border/60 px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
-            ttl {new Date(sandbox.expires_at).toLocaleString()}
-          </span>
+          <MetaChip
+            label="ttl"
+            value={new Date(sandbox.expires_at).toLocaleString()}
+          />
         ) : null}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Exec</CardTitle>
-          <CardDescription>
-            Runs on the live seat via{" "}
-            <code className="font-mono">POST /v1/sandboxes/:id/exec</code>
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <TerminalPanel
+        title={`landa@${sandbox.label || sandbox.id.slice(0, 8)} ~ exec`}
+        meta={result ? `exit ${result.exitCode}` : running ? "ready" : "idle"}
+        className="shadow-md"
+        footer={
           <form className="flex gap-2" onSubmit={runExec}>
-            <Input
-              className="font-mono text-xs"
-              value={cmd}
-              onChange={(e) => setCmd(e.target.value)}
-              placeholder="uname -a"
-              disabled={sandbox.status !== "running"}
-            />
+            <div className="relative min-w-0 flex-1">
+              <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 font-mono text-xs text-white/30">
+                $
+              </span>
+              <Input
+                className="h-9 rounded-lg border-white/10 bg-white/4 pl-7 font-mono text-xs text-white placeholder:text-white/25 focus-visible:border-primary/50 focus-visible:ring-primary/20"
+                value={cmd}
+                onChange={(e) => setCmd(e.target.value)}
+                placeholder="uname -a"
+                disabled={!running}
+                spellCheck={false}
+              />
+            </div>
             <Button
               type="submit"
               size="sm"
-              disabled={busy || sandbox.status !== "running" || !cmd.trim()}
+              className="h-9 rounded-lg"
+              disabled={busy || !running || !cmd.trim()}
             >
               <PlayIcon />
               Run
             </Button>
           </form>
+        }
+      >
+        <div className="min-h-48 max-h-96 overflow-auto p-4">
           {result ? (
-            <pre className="mt-4 max-h-80 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[0.7rem] leading-relaxed">
-              <span className="text-muted-foreground">
+            <pre className="font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap">
+              <span className="text-white/35">
                 exit {result.exitCode} · {result.durationMs}ms
-                {"\n"}
+                {"\n\n"}
               </span>
-              {result.stdout}
+              <span className="text-white/90">{result.stdout}</span>
               {cleanStderr(result.stderr) ? (
-                <span className="text-destructive">
+                <span className="text-[#ff7b82]">
                   {cleanStderr(result.stderr)}
                 </span>
               ) : null}
             </pre>
-          ) : null}
-        </CardContent>
-      </Card>
+          ) : (
+            <p className="font-mono text-[0.75rem] text-white/30">
+              {running
+                ? "# run a command to see output here"
+                : "# sandbox is not running"}
+            </p>
+          )}
+        </div>
+      </TerminalPanel>
 
       {snapshot ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>World snapshot</CardTitle>
-            <CardDescription>Agent-facing affordances JSON</CardDescription>
+        <Card className="shadow-sm">
+          <CardHeader className="border-b border-border/60">
+            <CardTitle className="text-base">World snapshot</CardTitle>
+            <CardDescription>
+              Agent-facing affordances from the live seat
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[0.7rem]">
+          <CardContent className="pt-4">
+            <pre className="max-h-96 overflow-auto rounded-xl bg-muted/40 p-4 font-mono text-[0.7rem] leading-relaxed ring-1 ring-border/50">
               {JSON.stringify(snapshot, null, 2)}
             </pre>
           </CardContent>
         </Card>
       ) : null}
 
-      <Card size="sm">
+      <Card size="sm" className="shadow-xs">
         <CardHeader>
-          <CardTitle>Metadata</CardTitle>
+          <CardTitle className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Metadata
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <pre className="overflow-auto font-mono text-[0.65rem] text-muted-foreground">
+          <pre className="overflow-auto font-mono text-[0.65rem] leading-relaxed text-muted-foreground">
             {JSON.stringify(sandbox.metadata, null, 2)}
           </pre>
         </CardContent>
       </Card>
     </PageContainer>
+  );
+}
+
+function MetaChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/40 px-2 py-1 font-mono text-[0.65rem] text-muted-foreground">
+      <span className="text-muted-foreground/70">{label}</span>
+      <span className="text-foreground/80">{value}</span>
+    </span>
   );
 }
