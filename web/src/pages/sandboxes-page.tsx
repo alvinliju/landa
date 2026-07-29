@@ -100,27 +100,17 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
   }
 
   return (
-    <PageContainer className="flex flex-col gap-7">
+    <PageContainer className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Your machines"
         title="VMs"
-        description="Agent computers owned by your account. Create → exec → snapshot → destroy."
+        description="Agent computers owned by your account."
         actions={
           <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 rounded-xl"
-              onClick={() => void refresh()}
-            >
+            <Button variant="outline" size="sm" onClick={() => void refresh()}>
               <RefreshCwIcon className={cn(loading && "animate-spin")} />
               Refresh
             </Button>
-            <Button
-              size="sm"
-              className="h-9 rounded-xl"
-              onClick={() => setOpen(true)}
-            >
+            <Button size="sm" onClick={() => setOpen(true)}>
               <PlusIcon />
               Create
             </Button>
@@ -129,45 +119,33 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
       />
 
       {sandboxes.length === 0 && !loading ? (
-        <Empty className="rounded-3xl border border-dashed border-blue-100 bg-linear-to-b from-sky-50/50 to-white py-16 shadow-sm">
+        <Empty className="border border-dashed py-14">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <TerminalSquareIcon />
             </EmptyMedia>
             <EmptyTitle>No VMs yet</EmptyTitle>
             <EmptyDescription>
-              Spin up a computer for your agent. Prefer{" "}
-              <span className="font-mono text-foreground/80">landa-agent</span>{" "}
-              for a full offline toolkit. Each VM is tied to your user.
+              Prefer{" "}
+              <span className="font-mono">landa-agent</span> for a full offline
+              toolkit.
             </EmptyDescription>
           </EmptyHeader>
-          <Button
-            size="sm"
-            className="h-9 rounded-xl"
-            onClick={() => setOpen(true)}
-          >
+          <Button size="sm" onClick={() => setOpen(true)}>
             <PlusIcon />
             Create VM
           </Button>
         </Empty>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-blue-100/80 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-lg ring-1 ring-foreground/10">
           <Table>
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-11 text-[0.7rem] tracking-wide text-gray-400 uppercase">
-                  Label
-                </TableHead>
-                <TableHead className="h-11 text-[0.7rem] tracking-wide text-gray-400 uppercase">
-                  Status
-                </TableHead>
-                <TableHead className="h-11 text-[0.7rem] tracking-wide text-gray-400 uppercase">
-                  Backend
-                </TableHead>
-                <TableHead className="h-11 text-[0.7rem] tracking-wide text-gray-400 uppercase">
-                  Created
-                </TableHead>
-                <TableHead className="h-11 w-12" />
+              <TableRow>
+                <TableHead>Label</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Backend</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -178,10 +156,10 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
                   onClick={() => onOpen(s.id)}
                 >
                   <TableCell>
-                    <div className="text-sm font-medium tracking-tight">
+                    <div className="text-sm font-medium">
                       {s.label || "Untitled"}
                     </div>
-                    <div className="mt-0.5 font-mono text-[0.65rem] text-gray-400">
+                    <div className="font-mono text-[0.65rem] text-muted-foreground">
                       {s.id}
                     </div>
                   </TableCell>
@@ -191,14 +169,13 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
                   <TableCell>
                     <BackendChip backend={s.backend} />
                   </TableCell>
-                  <TableCell className="font-mono text-[0.7rem] text-gray-400">
+                  <TableCell className="font-mono text-[0.7rem] text-muted-foreground">
                     {new Date(s.created_at).toLocaleString()}
                   </TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="text-gray-400 hover:text-red-600"
                       onClick={(e) => void destroy(s.id, e)}
                     >
                       <Trash2Icon />
@@ -212,19 +189,16 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-md">
-          <DialogHeader className="border-b border-blue-50 px-6 py-5">
-            <DialogTitle className="text-base">Create VM</DialogTitle>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create VM</DialogTitle>
             <DialogDescription>
-              Spawns a machine owned by your account. Template selects the image
-              and backend.
+              Spawns a machine owned by your account.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 px-6 py-5">
+          <div className="grid gap-4 py-2">
             <div className="grid gap-2">
-              <Label htmlFor="template" className="text-xs font-medium">
-                Template
-              </Label>
+              <Label htmlFor="template">Template</Label>
               <div className="grid gap-2">
                 {templates.map((t) => {
                   const selected = template === t.slug;
@@ -234,17 +208,15 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
                       type="button"
                       onClick={() => setTemplate(t.slug)}
                       className={cn(
-                        "flex items-start justify-between gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all",
+                        "flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5 text-left text-sm",
                         selected
-                          ? "border-sky-200 bg-sky-50/80 shadow-glow"
-                          : "border-gray-100 bg-white hover:border-blue-100 hover:bg-sky-50/40",
+                          ? "border-foreground/20 bg-muted"
+                          : "border-border hover:bg-muted/50",
                       )}
                     >
-                      <div className="min-w-0">
-                        <div className="font-mono text-sm font-medium">
-                          {t.slug}
-                        </div>
-                        <div className="mt-0.5 text-xs text-gray-500">
+                      <div>
+                        <div className="font-mono font-medium">{t.slug}</div>
+                        <div className="text-xs text-muted-foreground">
                           {t.name}
                         </div>
                       </div>
@@ -255,30 +227,22 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="label" className="text-xs font-medium">
-                Label{" "}
-                <span className="font-normal text-gray-400">(optional)</span>
-              </Label>
+              <Label htmlFor="label">Label (optional)</Label>
               <Input
                 id="label"
-                className="h-10 rounded-xl font-mono text-xs"
+                className="font-mono text-xs"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="agent-worker-1"
               />
             </div>
           </div>
-          <DialogFooter className="border-t border-blue-50 bg-gray-50/50 px-6 py-4">
-            <Button
-              variant="outline"
-              className="h-9 rounded-xl"
-              onClick={() => setOpen(false)}
-            >
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button
               disabled={busy || !template}
-              className="h-9 rounded-xl"
               onClick={() => void create()}
             >
               {busy ? "Creating…" : "Create VM"}

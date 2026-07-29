@@ -51,10 +51,10 @@ export function SidebarProfile({
             render={
               <SidebarMenuButton
                 size="lg"
-                className="h-auto min-h-11 rounded-xl px-2 py-2 data-open:bg-sidebar-accent"
+                className="h-auto min-h-11 data-open:bg-sidebar-accent"
                 tooltip={label}
               >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-gray-100 bg-white font-mono text-[0.7rem] font-semibold text-gray-800 shadow-xs">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-[0.7rem] font-medium">
                   {initials(user)}
                 </span>
                 <span className="grid min-w-0 flex-1 text-left text-sm leading-tight">
@@ -67,11 +67,7 @@ export function SidebarProfile({
               </SidebarMenuButton>
             }
           />
-          <DropdownMenuContent
-            side="top"
-            align="start"
-            className="w-60 rounded-xl"
-          >
+          <DropdownMenuContent side="top" align="start" className="w-56">
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium">{label}</span>

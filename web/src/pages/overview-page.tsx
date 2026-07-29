@@ -23,7 +23,6 @@ import {
   Empty,
   EmptyDescription,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -65,23 +64,21 @@ export function OverviewPage({
   const ttlH = Math.round(project.maxSessionSec / 3600);
 
   return (
-    <PageContainer className="flex flex-col gap-8">
+    <PageContainer className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Console"
         title="Overview"
-        description="Your agent computers, scoped to this account. Create VMs, run commands, snapshot, destroy."
+        description="Your agent computers. Create VMs, run commands, snapshot, destroy."
         actions={
           <>
             <Button
               variant="outline"
               size="sm"
-              className="h-9 rounded-xl"
               onClick={() => void refresh()}
             >
               <RefreshCwIcon className={cn(loading && "animate-spin")} />
               Refresh
             </Button>
-            <Button size="sm" className="h-9 rounded-xl" onClick={onCreate}>
+            <Button size="sm" onClick={onCreate}>
               <PlusIcon />
               New VM
             </Button>
@@ -95,88 +92,68 @@ export function OverviewPage({
           value={project.slug}
           hint={`${project.maxConcurrent} max concurrent · ${ttlH}h TTL`}
           icon={<ServerIcon className="size-3.5" />}
-          className="animate-in-up"
         />
         <StatCard
           label="Running"
           value={`${running} / ${project.maxConcurrent}`}
-          hint="Active VMs on your account"
+          hint="Active VMs"
           icon={<ActivityIcon className="size-3.5" />}
-          className="animate-in-up stagger-1"
         />
         <StatCard
           label="API"
           value={health?.ok ? "healthy" : loading ? "…" : "down"}
-          hint={health?.db ? "Database connected" : "Checking database…"}
+          hint={health?.db ? "Database connected" : "Checking…"}
           icon={<SparklesIcon className="size-3.5" />}
-          className="animate-in-up stagger-2"
         />
         <StatCard
           label="Backends"
           value={backends.length ? backends.join(" · ") : "—"}
-          hint="Registered compute drivers"
+          hint="Compute drivers"
           icon={<CpuIcon className="size-3.5" />}
-          className="animate-in-up stagger-3"
         />
       </div>
 
-      <Card className="animate-in-up stagger-2 rounded-2xl border-blue-100/80 shadow-sm">
-        <CardHeader className="border-b border-blue-50 pb-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <CardTitle className="text-base font-semibold">Your VMs</CardTitle>
-              <CardDescription className="mt-1">
-                Machines owned by your account. Click any row to open exec.
-              </CardDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 rounded-xl text-xs"
-              onClick={onCreate}
-            >
-              View all
-            </Button>
-          </div>
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>Your VMs</CardTitle>
+          <CardDescription>
+            Machines owned by your account. Click to open exec.
+          </CardDescription>
         </CardHeader>
         <CardContent className="pt-4">
           {loading && sandboxes.length === 0 ? (
             <div className="flex flex-col gap-2">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
           ) : sandboxes.length === 0 ? (
-            <Empty className="rounded-2xl border border-dashed border-blue-100 bg-sky-50/30 py-12">
+            <Empty className="border border-dashed py-10">
               <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <TerminalGlyph />
-                </EmptyMedia>
                 <EmptyTitle>No VMs yet</EmptyTitle>
                 <EmptyDescription>
-                  Create a computer for your agent — Firecracker for real VMs,
-                  memory for quick smoke tests.
+                  Create a computer for your agent.
                 </EmptyDescription>
               </EmptyHeader>
-              <Button size="sm" className="h-9 rounded-xl" onClick={onCreate}>
+              <Button size="sm" onClick={onCreate}>
                 <PlusIcon />
                 Create VM
               </Button>
             </Empty>
           ) : (
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               {sandboxes.slice(0, 8).map((s) => (
                 <button
                   key={s.id}
                   type="button"
                   onClick={() => onOpenSandbox(s.id)}
-                  className="group flex items-center justify-between gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-all hover:border-blue-100 hover:bg-sky-50/50 hover:shadow-xs"
+                  className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-left hover:bg-muted"
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium tracking-tight">
+                    <div className="truncate text-sm font-medium">
                       {s.label || s.id.slice(0, 8)}
                     </div>
-                    <div className="mt-0.5 truncate font-mono text-[0.65rem] text-gray-400">
+                    <div className="truncate font-mono text-[0.65rem] text-muted-foreground">
                       {s.id}
                     </div>
                   </div>
@@ -191,19 +168,5 @@ export function OverviewPage({
         </CardContent>
       </Card>
     </PageContainer>
-  );
-}
-
-function TerminalGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" aria-hidden>
-      <path
-        d="M4 7l5 5-5 5M11 17h9"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

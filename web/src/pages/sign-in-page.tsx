@@ -1,31 +1,28 @@
-import { toast } from "sonner";
+import { GalleryVerticalEndIcon } from "lucide-react";
 
-import { SignIn2 } from "@/components/ui/clean-minimal-sign-in";
-import { authClient } from "@/lib/auth-client";
+import { LoginForm } from "@/components/login-form";
 
+/** shadcn login-03 layout: muted canvas, brand mark, centered card */
 export function SignInPage({
   onAuthed,
 }: {
-  /** Opens the console after cookies are set. May throw. */
   onAuthed: () => void | Promise<void>;
 }) {
   return (
-    <SignIn2
-      onSubmit={async ({ mode, email, password, name }) => {
-        if (mode === "signup") {
-          const { error } = await authClient.signUp.email({
-            name: name || email.split("@")[0] || "User",
-            email,
-            password,
-          });
-          if (error) throw new Error(error.message || "Could not create account");
-        } else {
-          const { error } = await authClient.signIn.email({ email, password });
-          if (error) throw new Error(error.message || "Could not sign in");
-        }
-        await onAuthed();
-        toast.success(mode === "signup" ? "Account created" : "Welcome back");
-      }}
-    />
+    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted p-6 md:p-10">
+      <div className="flex w-full max-w-sm flex-col gap-6">
+        <a
+          href="/"
+          className="flex items-center gap-2 self-center font-medium"
+          onClick={(e) => e.preventDefault()}
+        >
+          <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <GalleryVerticalEndIcon className="size-4" />
+          </div>
+          landa
+        </a>
+        <LoginForm onAuthed={onAuthed} />
+      </div>
+    </div>
   );
 }

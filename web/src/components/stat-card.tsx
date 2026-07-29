@@ -25,28 +25,20 @@ export function StatCard({
   mono?: boolean;
 }) {
   return (
-    <Card
-      size="sm"
-      className={cn(
-        "relative overflow-hidden rounded-2xl border-blue-100/80 bg-linear-to-b from-sky-50/40 to-white shadow-sm transition-shadow hover:shadow-md",
-        className,
-      )}
-    >
+    <Card size="sm" className={cn(className)}>
       <CardHeader className="pb-0">
         <div className="flex items-start justify-between gap-2">
-          <CardDescription className="text-[0.7rem] font-medium tracking-wide text-gray-500 uppercase">
-            {label}
-          </CardDescription>
+          <CardDescription>{label}</CardDescription>
           {icon ? (
-            <div className="flex size-8 items-center justify-center rounded-xl border border-gray-100 bg-white text-gray-500 shadow-xs">
+            <div className="flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
               {icon}
             </div>
           ) : null}
         </div>
         <CardTitle
           className={cn(
-            "mt-1 text-lg font-semibold tracking-tight text-gray-900",
-            mono && "font-mono text-base",
+            "mt-1 text-base font-semibold tracking-tight",
+            mono && "font-mono",
           )}
         >
           {value}
@@ -54,7 +46,7 @@ export function StatCard({
       </CardHeader>
       {hint ? (
         <CardContent>
-          <p className="text-[0.7rem] leading-relaxed text-gray-500">{hint}</p>
+          <p className="text-xs text-muted-foreground">{hint}</p>
         </CardContent>
       ) : null}
     </Card>

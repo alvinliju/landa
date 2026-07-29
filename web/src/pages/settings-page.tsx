@@ -1,5 +1,4 @@
 import * as React from "react";
-import { LogOutIcon, UserIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageContainer, PageHeader } from "@/components/page-header";
@@ -27,93 +26,61 @@ export function SettingsPage({ onSignOut }: { onSignOut: () => void }) {
   }, []);
 
   return (
-    <PageContainer className="flex flex-col gap-7">
+    <PageContainer className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Account"
         title="Settings"
-        description="Your free-tier project and session. Sign out ends the console session on this browser."
+        description="Account and free-tier project."
       />
-
-      <div className="grid max-w-2xl gap-4">
-        <Card className="rounded-2xl border-blue-100/80 shadow-sm">
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0 border-b border-blue-50 pb-4">
-            <div className="flex size-10 items-center justify-center rounded-2xl border border-gray-100 bg-white text-gray-700 shadow-xs">
-              <UserIcon className="size-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <CardTitle className="text-base font-semibold">Account</CardTitle>
-              <CardDescription className="mt-0.5">
-                Signed in with email and password.
-              </CardDescription>
-            </div>
+      <div className="grid max-w-lg gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Account</CardTitle>
+            <CardDescription>Email / password (Better Auth).</CardDescription>
           </CardHeader>
-          <CardContent className="pt-5">
+          <CardContent className="grid gap-2 text-sm">
             {!me ? (
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="h-4 w-36" />
-              </div>
+              <Skeleton className="h-4 w-48" />
             ) : (
-              <dl className="grid gap-3 text-sm">
+              <>
                 <Row label="Email" value={me.user?.email || "—"} />
                 <Row label="Name" value={me.user?.name || "—"} />
                 <Row label="User ID" value={me.user?.id || "—"} mono />
-                <Row label="Auth" value={me.via || "session"} mono />
                 {me.vms ? (
                   <Row
                     label="Active VMs"
                     value={`${me.vms.active} / ${me.vms.maxConcurrent}`}
                   />
                 ) : null}
-              </dl>
+              </>
             )}
           </CardContent>
         </Card>
-
-        <Card className="rounded-2xl border-blue-100/80 shadow-sm">
-          <CardHeader className="border-b border-blue-50 pb-4">
-            <CardTitle className="text-base font-semibold">Project</CardTitle>
-            <CardDescription>
-              Free project created on first sign-in. Limits apply per seat.
-            </CardDescription>
+        <Card>
+          <CardHeader>
+            <CardTitle>Project</CardTitle>
           </CardHeader>
-          <CardContent className="pt-5">
+          <CardContent className="grid gap-2 text-sm">
             {!me?.project ? (
-              <Skeleton className="h-4 w-56" />
+              <Skeleton className="h-4 w-40" />
             ) : (
-              <dl className="grid gap-3 text-sm">
+              <>
                 <Row label="Slug" value={me.project.slug} mono />
                 <Row
                   label="Concurrent"
                   value={String(me.project.maxConcurrent)}
                 />
                 <Row
-                  label="Session TTL"
-                  value={`${Math.round(me.project.maxSessionSec / 3600)} hours`}
+                  label="TTL"
+                  value={`${Math.round(me.project.maxSessionSec / 3600)}h`}
                 />
-                {me.backends?.length ? (
-                  <Row label="Backends" value={me.backends.join(" · ")} mono />
-                ) : null}
-              </dl>
+              </>
             )}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-blue-100/80 shadow-xs">
-          <CardContent className="flex flex-col gap-4 pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-medium">Sign out</div>
-              <p className="mt-0.5 text-xs text-gray-500">
-                Clears your session cookie on this device.
-              </p>
-            </div>
             <Button
-              size="sm"
               variant="destructive"
-              className="h-9 w-fit rounded-xl"
+              size="sm"
+              className="mt-2 w-fit"
               onClick={onSignOut}
             >
-              <LogOutIcon />
               Sign out
             </Button>
           </CardContent>
@@ -133,19 +100,9 @@ function Row({
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-xs font-medium tracking-wide text-gray-400 uppercase">
-        {label}
-      </dt>
-      <dd
-        className={
-          mono
-            ? "truncate font-mono text-xs text-gray-800"
-            : "truncate text-sm text-gray-800"
-        }
-      >
-        {value}
-      </dd>
+    <div className="flex justify-between gap-4">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={mono ? "font-mono text-xs" : ""}>{value}</span>
     </div>
   );
 }

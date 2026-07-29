@@ -52,23 +52,19 @@ export function AppSidebar({
   return (
     <AppSidebarShell {...props}>
       <AppSidebarHeader>
-        <div className="flex min-w-0 items-center gap-2.5 px-0.5">
+        <div className="flex min-w-0 items-center gap-2 px-0.5">
           <LandaMark size="sm" />
           <div className="min-w-0 leading-none">
-            <div className="truncate text-sm font-semibold tracking-tight">
-              landa
-            </div>
+            <div className="truncate text-sm font-medium">landa</div>
             <div className="mt-0.5 truncate font-mono text-[0.625rem] text-muted-foreground">
-              {projectSlug ? projectSlug : "console"}
+              {projectSlug ?? "console"}
             </div>
           </div>
         </div>
       </AppSidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[0.65rem] tracking-[0.1em] text-sky-700/70 uppercase">
-            Console
-          </SidebarGroupLabel>
+          <SidebarGroupLabel>Console</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {nav.map((item) => {
@@ -80,7 +76,6 @@ export function AppSidebar({
                     <SidebarMenuButton
                       isActive={active}
                       onClick={() => navigate(item.id)}
-                      className="h-9 rounded-xl"
                     >
                       <item.icon />
                       <span>{item.title}</span>
@@ -92,8 +87,7 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
-      <SidebarFooter className="gap-1.5">
+      <SidebarFooter className="gap-1">
         <SidebarSeparator className="mx-0" />
         <ThemeDropdown />
         <SidebarProfile
