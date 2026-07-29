@@ -47,19 +47,13 @@ export function SandboxesPage({
   const refresh = React.useCallback(async () => {
     const [s, t] = await Promise.all([api.sandboxes(), api.templates()]);
     setSandboxes(s.sandboxes);
-    setTemplates(t.templates);
-    const preferred =
-      t.templates.find((x) => x.slug === "landa-agent") ??
-      t.templates.find((x) => x.slug === "landa-lite") ??
-      t.templates.find((x) => x.slug === template) ??
-      t.templates[0];
-    if (preferred && !t.templates.find((x) => x.slug === template)) {
-      setTemplate(preferred.slug);
-    } else if (preferred && template === "landa-agent" && preferred.slug !== "landa-agent") {
-      // landa-agent not seeded yet — fall back
-      if (!t.templates.find((x) => x.slug === "landa-agent")) {
-        setTemplate(preferred.slug);
-      }
+    // product surface: only lite + agent
+    const only = t.templates.filter(
+      (x) => x.slug === "landa-agent" || x.slug === "landa-lite",
+    );
+    setTemplates(only.length ? only : t.templates);
+    if (!only.find((x) => x.slug === template) && only[0]) {
+      setTemplate(only[0].slug);
     }
   }, [template]);
 

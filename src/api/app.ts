@@ -107,7 +107,7 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
       template?: string;
       label?: string;
     };
-    const templateSlug = body.template ?? "memory-default";
+    const templateSlug = body.template ?? "landa-agent";
     const label = body.label ?? "";
     const db = sql();
 

@@ -35,7 +35,7 @@ SDK / curl / later MCP
 
 Auth: `Authorization: Bearer <key>` or `X-Api-Key: <key>`.
 
-Templates: `memory-default`, `docker-alpine`, `firecracker-hello` (row-only until wired).
+Templates: `landa-agent` (Grok default), `landa-lite` (shell smoke).
 
 ## maps to E2B UI
 

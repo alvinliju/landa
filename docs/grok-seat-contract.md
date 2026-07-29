@@ -12,7 +12,7 @@ Offline Firecracker seat for **main agents** (Grok first): write a script, run i
 | Mem | 256 MiB |
 | Tools | bash, busybox, **python3** (stdlib), **jq**, dropbear |
 
-Lite smoke image: `landa-lite` / `firecracker-hello` (shell only, smaller/faster).
+Lite smoke image: `landa-lite` (shell only, smaller/faster).
 
 ## Layout
 
