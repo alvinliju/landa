@@ -166,22 +166,31 @@ export function createApp(plane: ControlPlane = createMemoryPlane()) {
         );
       }
       try {
-        const cfg =
-          tmpl.config && typeof tmpl.config === "object" ? tmpl.config : {};
+        const cfg = (
+          tmpl.config && typeof tmpl.config === "object" ? tmpl.config : {}
+        ) as {
+          image?: string;
+          rootfs?: string;
+          kernel?: string;
+          memMiB?: number;
+          vcpu?: number;
+        };
         const info = await plane.create({
           name: label || templateSlug,
           template: templateSlug,
           backend: backendName,
           image: typeof cfg.image === "string" ? cfg.image : undefined,
+          rootfs: typeof cfg.rootfs === "string" ? cfg.rootfs : undefined,
+          kernel: typeof cfg.kernel === "string" ? cfg.kernel : undefined,
           memoryMiB:
-            typeof (cfg as { memMiB?: number }).memMiB === "number"
-              ? (cfg as { memMiB: number }).memMiB
-              : undefined,
+            typeof cfg.memMiB === "number" ? cfg.memMiB : undefined,
+          vcpu: typeof cfg.vcpu === "number" ? cfg.vcpu : undefined,
         });
         hostMeta = {
           computerId: info.id,
           endpoints: info.endpoints,
           seatStatus: info.status,
+          createMs: info.spec.labels?.createMs,
         };
         status = info.status;
         err = info.error ?? null;

@@ -26,8 +26,12 @@ export interface ComputerSpec {
   backend?: BackendName;
   /** template / image id (backend-specific) */
   template?: string;
-  /** docker image, firecracker rootfs, etc. */
+  /** docker image, firecracker rootfs path, etc. */
   image?: string;
+  /** firecracker: absolute or assets-relative rootfs path */
+  rootfs?: string;
+  /** firecracker: absolute or assets-relative kernel path */
+  kernel?: string;
   /** soft caps — backends may ignore until real isolation exists */
   vcpu?: number;
   memoryMiB?: number;
