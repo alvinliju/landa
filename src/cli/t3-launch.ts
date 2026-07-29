@@ -80,6 +80,8 @@ export type LaunchT3Opts = {
    */
   mode?: "serve" | "start";
   host?: string;
+  /** Provider workspace cwd (cloud mirror path). Passed to t3 start/serve. */
+  workspaceCwd?: string;
 };
 
 export async function launchT3(opts: LaunchT3Opts): Promise<void> {
@@ -122,10 +124,15 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
   console.log(`  LANDA_API_BASE=${opts.base}`);
   console.log("");
 
+  const cwdArg = opts.workspaceCwd ? [opts.workspaceCwd] : [];
+  if (opts.workspaceCwd) {
+    console.log(`  workspace (cloud mirror): ${opts.workspaceCwd}`);
+    env.LANDA_WORKSPACE_MIRROR = opts.workspaceCwd;
+  }
+
   if (mode === "serve") {
-    // Headless: only backend. Pair with desktop/phone — no Vite on :5733.
     console.log("  headless serve — open the pairing URL the server prints");
-    console.log("  (API default ~http://127.0.0.1:13773 or :3773, NOT :5733)");
+    console.log("  (API ~:13773/:3773 — not Vite :5733)");
     console.log("");
     await runForeground(
       pnpm,
@@ -137,25 +144,54 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
         "--experimental-strip-types",
         "src/bin.ts",
         "serve",
+        "--auto-bootstrap-project-from-cwd",
         ...(opts.host ? ["--host", opts.host] : []),
+        ...cwdArg,
       ],
       { env, cwd: t3Root },
     );
     return;
   }
 
-  // Full local GUI: MUST start Vite web (:5733) + server (:13773).
-  // `dev:server` alone = only API → browser fails on localhost:5733.
-  console.log("  full stack:");
-  console.log("    server  http://127.0.0.1:13773  (API / WebSocket)");
-  console.log("    web     http://127.0.0.1:5733   (UI — open this)");
-  console.log("");
-  console.log("  Wait until BOTH are up, then open the pairing URL, e.g.");
-  console.log("    http://localhost:5733/pair#token=…");
-  console.log("  If web never starts, try: cd t3 && pnpm dev");
+  // Prefer single-binary start with workspace cwd so cloud mirror becomes the project.
+  // Falls back to full pnpm dev (UI on :5733) if start fails.
+  console.log("  starting T3 with cloud workspace as project cwd…");
+  console.log("  UI: open pairing URL (often :5733 in dev, or server port)");
   console.log("");
 
-  await runForeground(pnpm, ["dev"], { env, cwd: t3Root });
+  try {
+    await runForeground(
+      pnpm,
+      [
+        "--filter",
+        "t3",
+        "exec",
+        "node",
+        "--experimental-strip-types",
+        "src/bin.ts",
+        "start",
+        "--auto-bootstrap-project-from-cwd",
+        ...cwdArg,
+      ],
+      { env, cwd: opts.workspaceCwd || t3Root },
+    );
+    return;
+  } catch (e) {
+    console.warn("t3 start failed, falling back to pnpm dev (full UI)…");
+    console.warn(String(e instanceof Error ? e.message : e));
+  }
+
+  console.log("  full stack: server :13773 + web :5733");
+  console.log("  open http://localhost:5733/pair#token=… when printed");
+  console.log("");
+  // Run server from monorepo; pass mirror via env for landa hooks
+  await runForeground(pnpm, ["dev"], {
+    env: {
+      ...env,
+      ...(opts.workspaceCwd ? { T3CODE_BOOTSTRAP_CWD: opts.workspaceCwd } : {}),
+    },
+    cwd: t3Root,
+  });
 }
 
 function runForeground(

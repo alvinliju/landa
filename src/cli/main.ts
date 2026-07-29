@@ -23,6 +23,14 @@ import {
   SITE_ALIASES,
   configPath,
 } from "./config.js";
+import {
+  ensureLocalMirror,
+  isCloudSyncOn,
+  parseCloudSyncFlag,
+  pullToMirror,
+  pushFromMirror,
+  writeCloudMarker,
+} from "./cloud-sync.js";
 import { runLogin } from "./login.js";
 import { openSession } from "./open.js";
 import { runT3 } from "./t3.js";
@@ -36,6 +44,8 @@ type GlobalFlags = {
   start: boolean;
   loginKey?: string;
   t3: boolean;
+  cloud?: boolean;
+  newWorkspace?: string;
   rest: string[];
 };
 
@@ -54,6 +64,15 @@ Open a session:
   landa -s landa -r <session-id>
   landa open -r <session-id|name>
   landa open myapp
+
+Cloud sync (workspaces on landa):
+  landa config set cloud-sync on     # agent homes = landa sessions
+  landa config set cloud-sync off    # local T3 cwd (laptop only)
+  landa t3 --cloud                    # force on for this run
+  landa t3 --local                   # force off for this run
+  landa t3 --new myapp               # create new cloud workspace
+  landa sync pull -r <id>            # cloud → local mirror
+  landa sync push -r <id>            # local mirror → cloud
 
 Config:
   landa config show
@@ -78,11 +97,14 @@ Flags:
   -r, --session <id>     session id or name
   -k, --key <key>        API key
   -b, --base <url>       API base
+  --cloud / --local      force cloud sync for t3
+  --new <name>           with t3: new cloud workspace
   --no-browser
   --start                boot seat when opening
-  --login [key]          same as landa login
-  --t3                   same as landa t3
-  --serve                with --t3 / t3: launch npx t3 serve
+  --login [key]
+  --t3
+  --serve                t3 headless
+  --no-launch
 
 config: ${configPath()}
 `);
@@ -99,6 +121,22 @@ function parseGlobals(argv: string[]): GlobalFlags {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "-h" || a === "--help") usage();
+    if (a === "--cloud") {
+      out.cloud = true;
+      continue;
+    }
+    if (a === "--local") {
+      out.cloud = false;
+      continue;
+    }
+    if (a === "--new") {
+      out.newWorkspace = argv[++i];
+      continue;
+    }
+    if (a.startsWith("--new=")) {
+      out.newWorkspace = a.slice("--new=".length);
+      continue;
+    }
     if (a === "--login") {
       const next = argv[i + 1];
       if (next && !next.startsWith("-") && next.startsWith("landa_")) {
@@ -203,6 +241,10 @@ async function main() {
     const mode = rest.includes("--serve") || argv.includes("--serve")
       ? ("serve" as const)
       : ("start" as const);
+    // parse --new from rest if not global
+    let newWs = g0.newWorkspace;
+    const ni = rest.indexOf("--new");
+    if (ni >= 0 && rest[ni + 1]) newWs = rest[ni + 1];
     await runT3({
       key: g0.key,
       base: g0.base || (g0.site ? SITE_ALIASES[g0.site] ?? g0.site : undefined),
@@ -210,6 +252,8 @@ async function main() {
       browser: g0.browser,
       mode,
       noLaunch,
+      cloud: g0.cloud,
+      newWorkspace: newWs,
     });
     return;
   }
@@ -264,7 +308,18 @@ async function main() {
     const sub = args[0];
     if (sub === "show" || !sub) {
       const cfg = await loadConfig();
-      console.log(JSON.stringify({ path: configPath(), ...cfg, apiKey: cfg.apiKey ? `${cfg.apiKey.slice(0, 12)}…` : undefined }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            path: configPath(),
+            ...cfg,
+            apiKey: cfg.apiKey ? `${cfg.apiKey.slice(0, 12)}…` : undefined,
+            cloudSync: isCloudSyncOn(cfg),
+          },
+          null,
+          2,
+        ),
+      );
       console.log("aliases:", SITE_ALIASES);
       return;
     }
@@ -278,7 +333,55 @@ async function main() {
       console.log("saved base →", configPath());
       return;
     }
-    throw new Error("usage: landa config set key|base <value> | landa config show");
+    if (
+      sub === "set" &&
+      (args[1] === "cloud-sync" || args[1] === "cloudSync") &&
+      args[2]
+    ) {
+      const on = parseCloudSyncFlag(args[2]);
+      await saveConfig({ cloudSync: on });
+      console.log(`cloud-sync ${on ? "ON" : "OFF"} → ${configPath()}`);
+      console.log(
+        on
+          ? "  new t3 workspaces bind to landa sessions (cloud volume = truth)"
+          : "  t3 uses local cwd only (laptop)",
+      );
+      return;
+    }
+    throw new Error(
+      "usage: landa config set key|base|cloud-sync <value> | landa config show",
+    );
+  }
+
+  if (cmd === "sync") {
+    const sub = args[0]; // pull | push
+    const client = await clientFrom(g);
+    const id = (
+      await client.resolveSession(needSession(g, args[1]))
+    ).id;
+    const session = (await client.session(id)).session;
+    const mirror = await ensureLocalMirror(
+      { id: session.id, name: session.name },
+      client.base,
+    );
+    if (sub === "pull") {
+      console.log(`pull cloud → ${mirror}`);
+      const r = await pullToMirror(client, id, mirror);
+      console.log(`ok: ${r.files} files (${r.skipped} skipped)`);
+      return;
+    }
+    if (sub === "push") {
+      console.log(`push ${mirror} → cloud`);
+      await writeCloudMarker(
+        client,
+        { id: session.id, name: session.name },
+        client.base,
+      );
+      const r = await pushFromMirror(client, id, mirror);
+      console.log(`ok: ${r.files} files (${r.skipped} skipped)`);
+      return;
+    }
+    throw new Error("usage: landa sync pull|push -r <session>");
   }
 
   const client = await clientFrom(g);

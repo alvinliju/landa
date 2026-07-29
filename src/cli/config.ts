@@ -7,6 +7,13 @@ export type LandaConfig = {
   apiBase?: string;
   /** last opened session id */
   lastSession?: string;
+  /**
+   * When true: workspaces are landa cloud sessions (host volume truth).
+   * T3/agents use a local mirror under ~/.cache/landa/workspaces/<id>.
+   */
+  cloudSync?: boolean;
+  /** default session name for new cloud workspaces */
+  defaultWorkspace?: string;
 };
 
 export const SITE_ALIASES: Record<string, string> = {

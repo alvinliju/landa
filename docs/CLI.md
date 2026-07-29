@@ -32,12 +32,16 @@ landa --t3
 6. **Launches bundled T3** from monorepo folder `t3/` (first run: `pnpm install` inside `t3/`)
 
 ```bash
-landa t3              # default: start T3 (GUI backend)
-landa t3 --serve      # headless serve (pair remote UI)
+landa t3              # full GUI: pnpm dev → server :13773 + web :5733
+landa t3 --serve      # headless API only (remote pair)
 landa t3 --no-launch  # setup only, no T3 process
 ```
 
-Bundle path: `landa/t3` (fork of t3code, landa-native). Override with `LANDA_T3_ROOT`.
+**Ports:** open **http://localhost:5733** (web UI), not only :13773.  
+If Firefox can’t connect to :5733, the Vite UI never started (server-only mode).  
+Pairing URL looks like `http://localhost:5733/pair#token=…` — use the whole thing.
+
+Bundle path: `landa/t3`. Override with `LANDA_T3_ROOT`.
 
 ## Commands
 
