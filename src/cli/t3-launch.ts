@@ -1,16 +1,20 @@
 /**
  * Launch bundled T3 Code from monorepo folder `t3/`.
+ *
+ * Why bare `node apps/server/src/bin.ts` fails:
+ *   T3 is a pnpm workspace. Deps like @effect/platform-node live in
+ *   t3/node_modules/.pnpm and are linked into package node_modules.
+ *   Running node on a source file before `pnpm install` finishes (or
+ *   without going through pnpm's package context) → ERR_MODULE_NOT_FOUND.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { access, constants } from "node:fs/promises";
+import { access, constants, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** landa repo root (…/landa) */
 export function landaRepoRoot(): string {
-  // src/cli → ../.. | dist/cli → ../..
   return join(here, "..", "..");
 }
 
@@ -41,6 +45,37 @@ async function which(cmd: string): Promise<string | null> {
   });
 }
 
+/** True only when pnpm install has linked workspace deps. */
+async function t3DepsReady(t3Root: string): Promise<boolean> {
+  // modules.yaml is written at end of successful pnpm install
+  if (await exists(join(t3Root, "node_modules/.modules.yaml"))) return true;
+  // symlink or real package
+  if (await exists(join(t3Root, "node_modules/@effect/platform-node")))
+    return true;
+  if (
+    await exists(
+      join(t3Root, "apps/server/node_modules/@effect/platform-node"),
+    )
+  )
+    return true;
+  return false;
+}
+
+function parseNodeMajorMinor(v: string): { major: number; minor: number } {
+  const m = v.replace(/^v/, "").split(".");
+  return { major: Number(m[0] || 0), minor: Number(m[1] || 0) };
+}
+
+/** T3 server engines: ^22.16 || ^23.11 || >=24.10 */
+function nodeEngineOk(version: string): boolean {
+  const { major, minor } = parseNodeMajorMinor(version);
+  if (major === 22 && minor >= 16) return true;
+  if (major === 23 && minor >= 11) return true;
+  if (major > 24) return true;
+  if (major === 24 && minor >= 10) return true;
+  return false;
+}
+
 export type LaunchT3Opts = {
   base: string;
   key: string;
@@ -49,12 +84,29 @@ export type LaunchT3Opts = {
   host?: string;
 };
 
-/**
- * Prefer monorepo t3/; fall back to npx t3@latest.
- * Blocks until process exits.
- */
 export async function launchT3(opts: LaunchT3Opts): Promise<void> {
   const t3Root = bundledT3Root();
+  const nodeV = process.version;
+
+  if (!nodeEngineOk(nodeV)) {
+    console.error("");
+    console.error(`Node ${nodeV} is too old for bundled T3.`);
+    console.error("  need:  ^22.16  or  ^23.11  or  >=24.10");
+    console.error("  you:   " + nodeV);
+    console.error("");
+    console.error("  brew install node@24   # or nvm install 24.13");
+    console.error("  # then re-run: npm run t3");
+    console.error("");
+    // monorepo root may also want 24.13.1 — warn only
+  } else {
+    const { major, minor } = parseNodeMajorMinor(nodeV);
+    if (major === 24 && minor < 13) {
+      console.warn(
+        `note: monorepo prefers Node ^24.13.1 (you have ${nodeV}) — usually fine`,
+      );
+    }
+  }
+
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     LANDA_API_BASE: opts.base,
@@ -63,23 +115,28 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
     ...(opts.sessionId ? { LANDA_SESSION_ID: opts.sessionId } : {}),
   };
 
-  const hasBundle = await exists(join(t3Root, "package.json"));
-  if (!hasBundle) {
-    console.error(`error: bundled t3 missing at ${t3Root}`);
-    console.error("expected monorepo layout: landa/t3 (t3code fork)");
-    throw new Error("bundled t3 not found");
+  if (!(await exists(join(t3Root, "package.json")))) {
+    throw new Error(
+      `bundled t3 missing at ${t3Root} — expected landa/t3 (t3code fork)`,
+    );
   }
 
   const pnpm = await which("pnpm");
   if (!pnpm) {
     throw new Error(
-      "pnpm is required for bundled t3 — https://pnpm.io/installation",
+      "pnpm is required — https://pnpm.io/installation (brew install pnpm)",
     );
   }
 
-  if (!(await exists(join(t3Root, "node_modules")))) {
-    console.log(`→ pnpm install in ${t3Root} (first run)…`);
+  if (!(await t3DepsReady(t3Root))) {
+    console.log(`→ pnpm install in ${t3Root} (first complete install)…`);
+    console.log("  this can take a few minutes");
     await runForeground(pnpm, ["install"], { env, cwd: t3Root });
+    if (!(await t3DepsReady(t3Root))) {
+      throw new Error(
+        "pnpm install finished but @effect/platform-node still missing — check t3/ install logs",
+      );
+    }
   }
 
   const mode = opts.mode ?? "start";
@@ -88,36 +145,30 @@ export async function launchT3(opts: LaunchT3Opts): Promise<void> {
       ? ["serve", ...(opts.host ? ["--host", opts.host] : [])]
       : ["start"];
 
-  console.log(`→ bundled T3 (${mode}) from ${t3Root}`);
-  console.log(`  LANDA_API_BASE=${opts.base}  LANDA_T3_SYNC=${env.LANDA_T3_SYNC}`);
+  console.log(`→ bundled T3 (${mode}) via pnpm — ${t3Root}`);
+  console.log(`  LANDA_API_BASE=${opts.base}`);
   console.log("");
 
-  // 1) Prefer built bin after monorepo build
-  const builtBin = join(t3Root, "apps/server/dist/bin.mjs");
-  if (await exists(builtBin)) {
-    await runForeground(process.execPath, [builtBin, ...binArgs], {
-      env,
-      cwd: join(t3Root, "apps/server"),
-    });
+  // Always use pnpm package context so workspace deps resolve.
+  // Prefer source entry (no separate build step).
+  const filterArgs = [
+    "--filter",
+    "t3",
+    "exec",
+    "node",
+    "--experimental-strip-types",
+    "src/bin.ts",
+    ...binArgs,
+  ];
+
+  try {
+    await runForeground(pnpm, filterArgs, { env, cwd: t3Root });
     return;
+  } catch (e) {
+    console.warn("pnpm --filter t3 exec failed, trying monorepo dev:server…");
+    console.warn(String(e instanceof Error ? e.message : e));
   }
 
-  // 2) Dev path: node strip-types on server bin (Node 22+)
-  const srcBin = join(t3Root, "apps/server/src/bin.ts");
-  if (await exists(srcBin)) {
-    try {
-      await runForeground(
-        process.execPath,
-        ["--experimental-strip-types", srcBin, ...binArgs],
-        { env, cwd: join(t3Root, "apps/server") },
-      );
-      return;
-    } catch (e) {
-      console.warn("strip-types launch failed, trying pnpm dev:server…", e);
-    }
-  }
-
-  // 3) monorepo script
   await runForeground(pnpm, ["dev:server"], { env, cwd: t3Root });
 }
 
@@ -143,4 +194,24 @@ function runForeground(
       else reject(new Error(`${cmd} ${args.join(" ")} exited ${code}`));
     });
   });
+}
+
+/** Exported for tests / diagnostics */
+export async function diagnoseT3(): Promise<string> {
+  const t3Root = bundledT3Root();
+  const lines = [
+    `t3Root=${t3Root}`,
+    `node=${process.version} ok=${nodeEngineOk(process.version)}`,
+    `package.json=${await exists(join(t3Root, "package.json"))}`,
+    `depsReady=${await t3DepsReady(t3Root)}`,
+  ];
+  try {
+    const pkg = JSON.parse(
+      await readFile(join(t3Root, "package.json"), "utf8"),
+    ) as { name?: string };
+    lines.push(`name=${pkg.name}`);
+  } catch {
+    lines.push("name=?");
+  }
+  return lines.join("\n");
 }
