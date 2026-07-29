@@ -9,7 +9,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-6xl animate-in-fade px-5 py-7 sm:px-7 lg:px-8",
+        "mx-auto w-full max-w-6xl animate-in-fade px-5 py-8 sm:px-8",
         className,
       )}
       {...props}
@@ -32,7 +32,7 @@ export function PageHeader({
     <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 space-y-1.5">
         {eyebrow ? (
-          <div className="text-[0.7rem] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+          <div className="text-[0.7rem] font-medium tracking-[0.1em] text-sky-600/80 uppercase">
             {eyebrow}
           </div>
         ) : null}

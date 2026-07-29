@@ -144,9 +144,9 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="surface-mesh flex min-h-svh flex-col items-center justify-center gap-3">
-        <LoaderCircleIcon className="size-5 animate-spin text-primary" />
-        <p className="text-xs text-muted-foreground">Loading console…</p>
+      <div className="surface-clean flex min-h-svh flex-col items-center justify-center gap-3">
+        <LoaderCircleIcon className="size-5 animate-spin text-gray-700" />
+        <p className="text-xs text-gray-500">Loading console…</p>
       </div>
     );
   }
@@ -166,8 +166,8 @@ export default function App() {
         user={user ?? {}}
         onSignOut={() => void handleSignOut()}
       />
-      <SidebarInset className="bg-background">
-        <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border/70 bg-background/80 px-4 backdrop-blur-xl">
+      <SidebarInset className="surface-clean">
+        <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-blue-100/80 bg-white/80 px-4 backdrop-blur-xl">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-1 h-4" />
           <Breadcrumb>
@@ -180,11 +180,11 @@ export default function App() {
             </BreadcrumbList>
           </Breadcrumb>
           <div className="ml-auto flex min-w-0 items-center gap-2">
-            <span className="hidden rounded-full bg-success/10 px-2 py-0.5 text-[0.65rem] font-medium text-success sm:inline-flex sm:items-center sm:gap-1.5">
-              <span className="pulse-dot size-1.5 rounded-full bg-success" />
+            <span className="hidden rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[0.65rem] font-medium text-emerald-700 sm:inline-flex sm:items-center sm:gap-1.5">
+              <span className="pulse-dot size-1.5 rounded-full bg-emerald-500" />
               Live
             </span>
-            <span className="max-w-[12rem] truncate rounded-md bg-muted/60 px-2 py-1 font-mono text-[0.65rem] text-muted-foreground ring-1 ring-border/50 sm:max-w-xs">
+            <span className="max-w-[12rem] truncate rounded-xl border border-gray-100 bg-gray-50 px-2.5 py-1 font-mono text-[0.65rem] text-gray-500 sm:max-w-xs">
               {userLabel}
             </span>
           </div>

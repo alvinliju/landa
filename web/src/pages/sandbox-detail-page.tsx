@@ -130,7 +130,7 @@ export function SandboxDetailPage({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg"
+              className="h-9 rounded-xl"
               onClick={onBack}
             >
               <ArrowLeftIcon />
@@ -139,7 +139,7 @@ export function SandboxDetailPage({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg"
+              className="h-9 rounded-xl"
               disabled={busy || !running}
               onClick={() => void runSnapshot()}
             >
@@ -149,7 +149,7 @@ export function SandboxDetailPage({
             <Button
               variant="destructive"
               size="sm"
-              className="h-8 rounded-lg"
+              className="h-9 rounded-xl"
               disabled={busy}
               onClick={() => void destroy()}
             >
@@ -233,29 +233,29 @@ export function SandboxDetailPage({
       </TerminalPanel>
 
       {snapshot ? (
-        <Card className="shadow-sm">
-          <CardHeader className="border-b border-border/60">
+        <Card className="rounded-2xl border-blue-100/80 shadow-sm">
+          <CardHeader className="border-b border-blue-50">
             <CardTitle className="text-base">World snapshot</CardTitle>
             <CardDescription>
               Agent-facing affordances from the live seat
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-4">
-            <pre className="max-h-96 overflow-auto rounded-xl bg-muted/40 p-4 font-mono text-[0.7rem] leading-relaxed ring-1 ring-border/50">
+            <pre className="max-h-96 overflow-auto rounded-xl border border-gray-100 bg-gray-50 p-4 font-mono text-[0.7rem] leading-relaxed">
               {JSON.stringify(snapshot, null, 2)}
             </pre>
           </CardContent>
         </Card>
       ) : null}
 
-      <Card size="sm" className="shadow-xs">
+      <Card size="sm" className="rounded-2xl border-blue-100/80 shadow-xs">
         <CardHeader>
-          <CardTitle className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          <CardTitle className="text-xs font-medium tracking-wide text-gray-400 uppercase">
             Metadata
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <pre className="overflow-auto font-mono text-[0.65rem] leading-relaxed text-muted-foreground">
+          <pre className="overflow-auto font-mono text-[0.65rem] leading-relaxed text-gray-500">
             {JSON.stringify(sandbox.metadata, null, 2)}
           </pre>
         </CardContent>
@@ -266,9 +266,9 @@ export function SandboxDetailPage({
 
 function MetaChip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/40 px-2 py-1 font-mono text-[0.65rem] text-muted-foreground">
-      <span className="text-muted-foreground/70">{label}</span>
-      <span className="text-foreground/80">{value}</span>
+    <span className="inline-flex items-center gap-1.5 rounded-xl border border-gray-100 bg-gray-50 px-2.5 py-1 font-mono text-[0.65rem] text-gray-500">
+      <span className="text-gray-400">{label}</span>
+      <span className="text-gray-700">{value}</span>
     </span>
   );
 }

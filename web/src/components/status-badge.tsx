@@ -3,23 +3,19 @@ import type { SandboxStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const styles: Record<SandboxStatus, string> = {
-  creating:
-    "border-warning/25 bg-warning/10 text-warning dark:border-warning/30 dark:bg-warning/12 dark:text-warning",
-  running:
-    "border-success/25 bg-success/10 text-success dark:border-success/30 dark:bg-success/12 dark:text-success",
-  paused:
-    "border-info/25 bg-info/10 text-info dark:border-info/30 dark:bg-info/12 dark:text-info",
-  stopped: "border-border bg-muted/80 text-muted-foreground",
-  destroyed: "border-border bg-muted/60 text-muted-foreground",
-  error:
-    "border-destructive/25 bg-destructive/10 text-destructive dark:border-destructive/30",
+  creating: "border-amber-200 bg-amber-50 text-amber-700",
+  running: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  paused: "border-sky-200 bg-sky-50 text-sky-700",
+  stopped: "border-gray-200 bg-gray-50 text-gray-500",
+  destroyed: "border-gray-200 bg-gray-50 text-gray-400",
+  error: "border-red-200 bg-red-50 text-red-600",
 };
 
 const dots: Partial<Record<SandboxStatus, string>> = {
-  creating: "bg-warning",
-  running: "bg-success",
-  paused: "bg-info",
-  error: "bg-destructive",
+  creating: "bg-amber-500",
+  running: "bg-emerald-500",
+  paused: "bg-sky-500",
+  error: "bg-red-500",
 };
 
 export function StatusBadge({
@@ -69,7 +65,7 @@ export function BackendChip({
     <Badge
       variant="secondary"
       className={cn(
-        "rounded-md font-mono text-[0.625rem] tracking-tight",
+        "rounded-lg border border-gray-100 bg-gray-50 font-mono text-[0.625rem] tracking-tight text-gray-600",
         className,
       )}
     >

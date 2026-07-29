@@ -66,7 +66,7 @@ export function AppSidebar({
       </AppSidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[0.65rem] tracking-[0.08em] uppercase">
+          <SidebarGroupLabel className="text-[0.65rem] tracking-[0.1em] text-sky-700/70 uppercase">
             Console
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -80,7 +80,7 @@ export function AppSidebar({
                     <SidebarMenuButton
                       isActive={active}
                       onClick={() => navigate(item.id)}
-                      className="h-8 rounded-lg"
+                      className="h-9 rounded-xl"
                     >
                       <item.icon />
                       <span>{item.title}</span>
@@ -93,7 +93,6 @@ export function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
 
-      {/* Stacked: theme, then profile — always at bottom of sidepanel */}
       <SidebarFooter className="gap-1.5">
         <SidebarSeparator className="mx-0" />
         <ThemeDropdown />

@@ -40,13 +40,13 @@ export function TemplatesPage() {
       <PageHeader
         eyebrow="Catalog"
         title="Templates"
-        description="Seat recipes — backend, image, and defaults. Choose one when you create a sandbox."
+        description="Seat recipes — backend, image, and defaults. Choose one when you create a VM."
       />
 
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2">
-          <Skeleton className="h-48 rounded-xl" />
-          <Skeleton className="h-48 rounded-xl" />
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -54,18 +54,14 @@ export function TemplatesPage() {
             <Card
               key={t.id}
               className={cn(
-                "relative overflow-hidden shadow-sm transition-[box-shadow,transform] duration-200 hover:shadow-md",
+                "relative overflow-hidden rounded-2xl border-blue-100/80 bg-linear-to-b from-sky-50/30 to-white shadow-sm transition-shadow hover:shadow-md",
                 "animate-in-up",
                 i === 1 && "stagger-1",
               )}
             >
-              <div
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/35 to-transparent"
-                aria-hidden
-              />
               <CardHeader className="gap-3">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+                  <div className="flex size-10 items-center justify-center rounded-2xl border border-gray-100 bg-white text-gray-700 shadow-xs">
                     {t.slug.includes("agent") ? (
                       <LayersIcon className="size-4" />
                     ) : (
@@ -84,11 +80,11 @@ export function TemplatesPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="rounded-lg bg-muted/50 p-3 ring-1 ring-border/50">
-                  <div className="mb-1.5 text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
+                <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-3">
+                  <div className="mb-1.5 text-[0.65rem] font-medium tracking-wide text-gray-400 uppercase">
                     Config
                   </div>
-                  <pre className="overflow-auto font-mono text-[0.65rem] leading-relaxed text-muted-foreground">
+                  <pre className="overflow-auto font-mono text-[0.65rem] leading-relaxed text-gray-500">
                     {JSON.stringify(t.config, null, 2)}
                   </pre>
                 </div>

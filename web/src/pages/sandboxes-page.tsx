@@ -110,7 +110,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg"
+              className="h-9 rounded-xl"
               onClick={() => void refresh()}
             >
               <RefreshCwIcon className={cn(loading && "animate-spin")} />
@@ -118,7 +118,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
             </Button>
             <Button
               size="sm"
-              className="h-8 rounded-lg"
+              className="h-9 rounded-xl"
               onClick={() => setOpen(true)}
             >
               <PlusIcon />
@@ -129,7 +129,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
       />
 
       {sandboxes.length === 0 && !loading ? (
-        <Empty className="rounded-2xl border border-dashed border-border/80 bg-muted/15 py-16 shadow-xs">
+        <Empty className="rounded-3xl border border-dashed border-blue-100 bg-linear-to-b from-sky-50/50 to-white py-16 shadow-sm">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <TerminalSquareIcon />
@@ -143,7 +143,7 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
           </EmptyHeader>
           <Button
             size="sm"
-            className="h-8 rounded-lg"
+            className="h-9 rounded-xl"
             onClick={() => setOpen(true)}
           >
             <PlusIcon />
@@ -151,37 +151,37 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
           </Button>
         </Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl bg-card shadow-sm ring-1 ring-border/70">
+        <div className="overflow-hidden rounded-2xl border border-blue-100/80 bg-white shadow-sm">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-10 text-[0.7rem] tracking-wide text-muted-foreground uppercase">
+                <TableHead className="h-11 text-[0.7rem] tracking-wide text-gray-400 uppercase">
                   Label
                 </TableHead>
-                <TableHead className="h-10 text-[0.7rem] tracking-wide text-muted-foreground uppercase">
+                <TableHead className="h-11 text-[0.7rem] tracking-wide text-gray-400 uppercase">
                   Status
                 </TableHead>
-                <TableHead className="h-10 text-[0.7rem] tracking-wide text-muted-foreground uppercase">
+                <TableHead className="h-11 text-[0.7rem] tracking-wide text-gray-400 uppercase">
                   Backend
                 </TableHead>
-                <TableHead className="h-10 text-[0.7rem] tracking-wide text-muted-foreground uppercase">
+                <TableHead className="h-11 text-[0.7rem] tracking-wide text-gray-400 uppercase">
                   Created
                 </TableHead>
-                <TableHead className="h-10 w-12" />
+                <TableHead className="h-11 w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {sandboxes.map((s) => (
                 <TableRow
                   key={s.id}
-                  className="cursor-pointer transition-colors"
+                  className="cursor-pointer"
                   onClick={() => onOpen(s.id)}
                 >
                   <TableCell>
                     <div className="text-sm font-medium tracking-tight">
                       {s.label || "Untitled"}
                     </div>
-                    <div className="mt-0.5 font-mono text-[0.65rem] text-muted-foreground">
+                    <div className="mt-0.5 font-mono text-[0.65rem] text-gray-400">
                       {s.id}
                     </div>
                   </TableCell>
@@ -191,14 +191,14 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
                   <TableCell>
                     <BackendChip backend={s.backend} />
                   </TableCell>
-                  <TableCell className="font-mono text-[0.7rem] text-muted-foreground">
+                  <TableCell className="font-mono text-[0.7rem] text-gray-400">
                     {new Date(s.created_at).toLocaleString()}
                   </TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive"
+                      className="text-gray-400 hover:text-red-600"
                       onClick={(e) => void destroy(s.id, e)}
                     >
                       <Trash2Icon />
@@ -212,8 +212,8 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-          <DialogHeader className="border-b border-border/60 px-6 py-5">
+        <DialogContent className="gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-md">
+          <DialogHeader className="border-b border-blue-50 px-6 py-5">
             <DialogTitle className="text-base">Create VM</DialogTitle>
             <DialogDescription>
               Spawns a machine owned by your account. Template selects the image
@@ -234,17 +234,17 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
                       type="button"
                       onClick={() => setTemplate(t.slug)}
                       className={cn(
-                        "flex items-start justify-between gap-3 rounded-xl border px-3.5 py-3 text-left transition-all",
+                        "flex items-start justify-between gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all",
                         selected
-                          ? "border-primary/40 bg-primary/5 shadow-glow"
-                          : "border-border/70 bg-card hover:border-border hover:bg-muted/30",
+                          ? "border-sky-200 bg-sky-50/80 shadow-glow"
+                          : "border-gray-100 bg-white hover:border-blue-100 hover:bg-sky-50/40",
                       )}
                     >
                       <div className="min-w-0">
                         <div className="font-mono text-sm font-medium">
                           {t.slug}
                         </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground">
+                        <div className="mt-0.5 text-xs text-gray-500">
                           {t.name}
                         </div>
                       </div>
@@ -257,30 +257,28 @@ export function SandboxesPage({ onOpen }: { onOpen: (id: string) => void }) {
             <div className="grid gap-2">
               <Label htmlFor="label" className="text-xs font-medium">
                 Label{" "}
-                <span className="font-normal text-muted-foreground">
-                  (optional)
-                </span>
+                <span className="font-normal text-gray-400">(optional)</span>
               </Label>
               <Input
                 id="label"
-                className="h-9 rounded-lg font-mono text-xs"
+                className="h-10 rounded-xl font-mono text-xs"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="agent-worker-1"
               />
             </div>
           </div>
-          <DialogFooter className="border-t border-border/60 bg-muted/20 px-6 py-4">
+          <DialogFooter className="border-t border-blue-50 bg-gray-50/50 px-6 py-4">
             <Button
               variant="outline"
-              className="h-8 rounded-lg"
+              className="h-9 rounded-xl"
               onClick={() => setOpen(false)}
             >
               Cancel
             </Button>
             <Button
               disabled={busy || !template}
-              className="h-8 rounded-lg"
+              className="h-9 rounded-xl"
               onClick={() => void create()}
             >
               {busy ? "Creating…" : "Create VM"}

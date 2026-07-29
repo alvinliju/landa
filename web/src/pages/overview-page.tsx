@@ -69,19 +69,19 @@ export function OverviewPage({
       <PageHeader
         eyebrow="Console"
         title="Overview"
-        description="Control plane for agent computers. Your VMs are scoped to your signed-in account."
+        description="Your agent computers, scoped to this account. Create VMs, run commands, snapshot, destroy."
         actions={
           <>
             <Button
               variant="outline"
               size="sm"
-              className="h-8 rounded-lg"
+              className="h-9 rounded-xl"
               onClick={() => void refresh()}
             >
               <RefreshCwIcon className={cn(loading && "animate-spin")} />
               Refresh
             </Button>
-            <Button size="sm" className="h-8 rounded-lg" onClick={onCreate}>
+            <Button size="sm" className="h-9 rounded-xl" onClick={onCreate}>
               <PlusIcon />
               New VM
             </Button>
@@ -100,7 +100,7 @@ export function OverviewPage({
         <StatCard
           label="Running"
           value={`${running} / ${project.maxConcurrent}`}
-          hint="Active seats on this project"
+          hint="Active VMs on your account"
           icon={<ActivityIcon className="size-3.5" />}
           className="animate-in-up stagger-1"
         />
@@ -120,13 +120,11 @@ export function OverviewPage({
         />
       </div>
 
-      <Card className="shadow-sm animate-in-up stagger-2">
-        <CardHeader className="border-b border-border/60 pb-4">
+      <Card className="animate-in-up stagger-2 rounded-2xl border-blue-100/80 shadow-sm">
+        <CardHeader className="border-b border-blue-50 pb-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <CardTitle className="text-base font-semibold">
-                Your VMs
-              </CardTitle>
+              <CardTitle className="text-base font-semibold">Your VMs</CardTitle>
               <CardDescription className="mt-1">
                 Machines owned by your account. Click any row to open exec.
               </CardDescription>
@@ -134,7 +132,7 @@ export function OverviewPage({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs"
+              className="h-8 rounded-xl text-xs"
               onClick={onCreate}
             >
               View all
@@ -145,11 +143,11 @@ export function OverviewPage({
           {loading && sandboxes.length === 0 ? (
             <div className="flex flex-col gap-2">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-lg" />
+                <Skeleton key={i} className="h-14 w-full rounded-xl" />
               ))}
             </div>
           ) : sandboxes.length === 0 ? (
-            <Empty className="rounded-xl border border-dashed border-border/80 bg-muted/20 py-12">
+            <Empty className="rounded-2xl border border-dashed border-blue-100 bg-sky-50/30 py-12">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <TerminalGlyph />
@@ -157,10 +155,10 @@ export function OverviewPage({
                 <EmptyTitle>No VMs yet</EmptyTitle>
                 <EmptyDescription>
                   Create a computer for your agent — Firecracker for real VMs,
-                  memory for quick smoke tests. Ownership is tied to your user.
+                  memory for quick smoke tests.
                 </EmptyDescription>
               </EmptyHeader>
-              <Button size="sm" className="h-8 rounded-lg" onClick={onCreate}>
+              <Button size="sm" className="h-9 rounded-xl" onClick={onCreate}>
                 <PlusIcon />
                 Create VM
               </Button>
@@ -172,13 +170,13 @@ export function OverviewPage({
                   key={s.id}
                   type="button"
                   onClick={() => onOpenSandbox(s.id)}
-                  className="group flex items-center justify-between gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-all hover:border-border/80 hover:bg-muted/40 hover:shadow-xs"
+                  className="group flex items-center justify-between gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-all hover:border-blue-100 hover:bg-sky-50/50 hover:shadow-xs"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium tracking-tight">
                       {s.label || s.id.slice(0, 8)}
                     </div>
-                    <div className="mt-0.5 truncate font-mono text-[0.65rem] text-muted-foreground">
+                    <div className="mt-0.5 truncate font-mono text-[0.65rem] text-gray-400">
                       {s.id}
                     </div>
                   </div>

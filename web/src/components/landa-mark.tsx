@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/** Compact monogram mark — geometric seat / machine glyph. */
+/** Compact monogram — white tile + charcoal glyph (clean minimal). */
 export function LandaMark({
   className,
   size = "md",
@@ -13,7 +13,7 @@ export function LandaMark({
   return (
     <div
       className={cn(
-        "relative flex shrink-0 items-center justify-center rounded-[0.65rem] bg-primary text-primary-foreground shadow-sm",
+        "relative flex shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-white text-gray-900 shadow-sm",
         dim,
         className,
       )}
@@ -22,7 +22,9 @@ export function LandaMark({
       <svg
         viewBox="0 0 24 24"
         fill="none"
-        className={size === "sm" ? "size-3.5" : size === "lg" ? "size-5" : "size-4"}
+        className={
+          size === "sm" ? "size-3.5" : size === "lg" ? "size-5" : "size-4"
+        }
       >
         <rect
           x="4"

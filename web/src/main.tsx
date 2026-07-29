@@ -8,7 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ThemeProvider defaultTheme="dark" storageKey="landa-theme">
+    <ThemeProvider defaultTheme="light" storageKey="landa-theme">
       <App />
       <Toaster />
     </ThemeProvider>

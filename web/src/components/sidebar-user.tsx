@@ -54,7 +54,7 @@ export function SidebarProfile({
                 className="h-auto min-h-11 rounded-xl px-2 py-2 data-open:bg-sidebar-accent"
                 tooltip={label}
               >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 font-mono text-[0.7rem] font-semibold text-primary ring-1 ring-primary/20">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-gray-100 bg-white font-mono text-[0.7rem] font-semibold text-gray-800 shadow-xs">
                   {initials(user)}
                 </span>
                 <span className="grid min-w-0 flex-1 text-left text-sm leading-tight">

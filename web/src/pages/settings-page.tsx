@@ -11,7 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 
@@ -36,15 +35,15 @@ export function SettingsPage({ onSignOut }: { onSignOut: () => void }) {
       />
 
       <div className="grid max-w-2xl gap-4">
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-start gap-3 space-y-0 border-b border-border/60 pb-4">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+        <Card className="rounded-2xl border-blue-100/80 shadow-sm">
+          <CardHeader className="flex flex-row items-start gap-3 space-y-0 border-b border-blue-50 pb-4">
+            <div className="flex size-10 items-center justify-center rounded-2xl border border-gray-100 bg-white text-gray-700 shadow-xs">
               <UserIcon className="size-4" />
             </div>
             <div className="min-w-0 flex-1">
               <CardTitle className="text-base font-semibold">Account</CardTitle>
               <CardDescription className="mt-0.5">
-                Signed in with email and password (Better Auth).
+                Signed in with email and password.
               </CardDescription>
             </div>
           </CardHeader>
@@ -71,8 +70,8 @@ export function SettingsPage({ onSignOut }: { onSignOut: () => void }) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm">
-          <CardHeader className="border-b border-border/60 pb-4">
+        <Card className="rounded-2xl border-blue-100/80 shadow-sm">
+          <CardHeader className="border-b border-blue-50 pb-4">
             <CardTitle className="text-base font-semibold">Project</CardTitle>
             <CardDescription>
               Free project created on first sign-in. Limits apply per seat.
@@ -100,18 +99,18 @@ export function SettingsPage({ onSignOut }: { onSignOut: () => void }) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-xs">
+        <Card className="rounded-2xl border-blue-100/80 shadow-xs">
           <CardContent className="flex flex-col gap-4 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm font-medium">Sign out</div>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p className="mt-0.5 text-xs text-gray-500">
                 Clears your session cookie on this device.
               </p>
             </div>
             <Button
               size="sm"
               variant="destructive"
-              className="h-8 w-fit rounded-lg"
+              className="h-9 w-fit rounded-xl"
               onClick={onSignOut}
             >
               <LogOutIcon />
@@ -135,19 +134,18 @@ function Row({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <dt className="text-xs font-medium tracking-wide text-gray-400 uppercase">
         {label}
       </dt>
       <dd
         className={
           mono
-            ? "truncate font-mono text-xs text-foreground"
-            : "truncate text-sm text-foreground"
+            ? "truncate font-mono text-xs text-gray-800"
+            : "truncate text-sm text-gray-800"
         }
       >
         {value}
       </dd>
-      <Separator className="sr-only" />
     </div>
   );
 }
