@@ -2,10 +2,15 @@
 /**
  * landa CLI — remote control plane client (host-first sessions).
  *
- * Quick open:
+ * Zero-friction:
+ *   landa login landa_…
+ *   landa --login landa_…
+ *   landa t3              # login if needed → sessions → console → t3 env
+ *   landa --t3
+ *
+ * Open:
  *   landa -s landa -r <session-id>
  *   landa open -r <session-id|name>
- *   landa open myapp
  */
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -18,7 +23,9 @@ import {
   SITE_ALIASES,
   configPath,
 } from "./config.js";
+import { runLogin } from "./login.js";
 import { openSession } from "./open.js";
+import { runT3 } from "./t3.js";
 
 type GlobalFlags = {
   site?: string;
@@ -27,58 +34,90 @@ type GlobalFlags = {
   session?: string;
   browser: boolean;
   start: boolean;
+  loginKey?: string;
+  t3: boolean;
   rest: string[];
 };
 
 function usage(): never {
-  console.log(`landa — cloud sessions (host-first)
+  console.log(`landa — cloud computers for agents (host-first)
 
-Open a session (console + workspace + env):
+Start here:
+  landa login [landa_…]          save API key (+ ask for base)
+  landa --login landa_…
+  landa t3                       login if needed, list sessions, open console, write t3.env
+  landa --t3 [--serve]           same; --serve tries npx t3@latest serve
+
+Open a session:
   landa -s landa -r <session-id>
   landa open -r <session-id|name>
-  landa open <name>
+  landa open myapp
 
 Config:
+  landa config show
   landa config set key landa_…
   landa config set base http://landa.tharavad.xyz
-  landa config show
   landa whoami
 
 Sessions:
-  landa sessions                      list
+  landa sessions
   landa create [--name n] [--repo url] [--boot]
   landa start|stop|destroy -r <id>
   landa status -r <id>
 
-Files (host when stopped, seat when running):
-  landa files ls -r <id> [path]
-  landa files cat -r <id> <path>
-  landa files put -r <id> <remote-path> <local-file>
+Files (host when stopped):
+  landa files ls|cat|put -r <id> …
 
-Exec (seat must be running):
+Exec (seat running):
   landa exec -r <id> -- <cmd…>
-  landa start -r <id> && landa exec -r <id> -- uname -a
 
-Flags (global):
-  -s, --site <alias>     landa | local | http://…   (default: landa)
+Flags:
+  -s, --site <alias>     landa | local | URL
   -r, --session <id>     session id or name
-  -k, --key <key>        API key (else LANDA_API_KEY / config)
-  -b, --base <url>       API base override
-  --no-browser           don't open console
+  -k, --key <key>        API key
+  -b, --base <url>       API base
+  --no-browser
   --start                boot seat when opening
+  --login [key]          same as landa login
+  --t3                   same as landa t3
+  --serve                with --t3 / t3: launch npx t3 serve
 
-env:
-  LANDA_API_KEY  LANDA_API_BASE  LANDA_CONFIG
-  config file: ${configPath()}
+config: ${configPath()}
 `);
   process.exit(0);
 }
 
 function parseGlobals(argv: string[]): GlobalFlags {
-  const out: GlobalFlags = { browser: true, start: false, rest: [] };
+  const out: GlobalFlags = {
+    browser: true,
+    start: false,
+    t3: false,
+    rest: [],
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "-h" || a === "--help") usage();
+    if (a === "--login") {
+      const next = argv[i + 1];
+      if (next && !next.startsWith("-") && next.startsWith("landa_")) {
+        out.loginKey = argv[++i];
+      } else {
+        out.loginKey = ""; // interactive
+      }
+      continue;
+    }
+    if (a.startsWith("--login=")) {
+      out.loginKey = a.slice("--login=".length);
+      continue;
+    }
+    if (a === "--t3") {
+      out.t3 = true;
+      continue;
+    }
+    if (a === "--serve") {
+      out.rest.push("--serve"); // picked up by t3
+      continue;
+    }
     if (a === "-s" || a === "--site" || a === "--server") {
       out.site = argv[++i];
       continue;
@@ -143,8 +182,32 @@ async function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0) usage();
 
-  // bare flags only: landa -s landa -r <id>
   const g0 = parseGlobals(argv);
+
+  // landa --login [key]  |  landa login [key]
+  if (g0.loginKey !== undefined) {
+    await runLogin({
+      key: g0.loginKey || g0.key || undefined,
+      base: g0.base || (g0.site ? SITE_ALIASES[g0.site] ?? g0.site : undefined),
+    });
+    return;
+  }
+
+  // landa --t3 | landa t3
+  if (g0.t3 || g0.rest[0] === "t3") {
+    const serve =
+      g0.rest.includes("--serve") || argv.includes("--serve");
+    await runT3({
+      key: g0.key,
+      base: g0.base || (g0.site ? SITE_ALIASES[g0.site] ?? g0.site : undefined),
+      session: g0.session,
+      browser: g0.browser,
+      serve,
+    });
+    return;
+  }
+
+  // bare flags only: landa -s landa -r <id>
   if (
     g0.rest.length === 0 &&
     (g0.session || g0.site) &&
@@ -181,6 +244,14 @@ async function main() {
   const g = parseGlobals(argv);
   const [cmd, ...args] = g.rest;
   if (!cmd || cmd === "help") usage();
+
+  if (cmd === "login") {
+    await runLogin({
+      key: args[0] || g.key,
+      base: g.base || (g.site ? SITE_ALIASES[g.site] ?? g.site : undefined),
+    });
+    return;
+  }
 
   if (cmd === "config") {
     const sub = args[0];
